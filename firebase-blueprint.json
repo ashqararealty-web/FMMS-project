@@ -1,0 +1,195 @@
+{
+  "entities": {
+    "Visit": {
+      "title": "Visit",
+      "description": "Field visit and worksite inspection record",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique record identifier (e.g. FV-2315)"
+        },
+        "reportingPerson": {
+          "type": "string",
+          "description": "Name of the field officer"
+        },
+        "dateOfVisit": {
+          "type": "string",
+          "description": "Date of visit (YYYY-MM-DD)"
+        },
+        "noOfVisit": {
+          "type": "string",
+          "description": "Visit frequency indicator (e.g. 1st Visit, 2nd Visit)"
+        },
+        "month": {
+          "type": "string",
+          "description": "Calendar month of visit"
+        },
+        "clusterName": {
+          "type": "string",
+          "description": "Geographical cluster name"
+        },
+        "industryType": {
+          "type": "string",
+          "description": "Type of industry or worksite"
+        },
+        "industryName": {
+          "type": "string",
+          "description": "Name of the industry/worksite"
+        },
+        "locationLink": {
+          "type": "string",
+          "description": "Google Maps GPS coordinates or location URL"
+        },
+        "areaVillageWard": {
+          "type": "string",
+          "description": "Village, ward or area"
+        },
+        "mandal": {
+          "type": "string",
+          "description": "Mandal or sub-district"
+        },
+        "revenueDivision": {
+          "type": "string",
+          "description": "Revenue division"
+        },
+        "policeStation": {
+          "type": "string",
+          "description": "Jurisdictional police station"
+        },
+        "seasonality": {
+          "type": "string",
+          "description": "Seasonal or perennial worksite"
+        },
+        "interactedPersonsCount": {
+          "type": "number",
+          "description": "Number of workers interviewed"
+        },
+        "approxWorkersCount": {
+          "type": "number",
+          "description": "Total estimated worker population"
+        },
+        "maleWorkersCount": {
+          "type": "number",
+          "description": "Male worker count"
+        },
+        "femaleWorkersCount": {
+          "type": "number",
+          "description": "Female worker count"
+        },
+        "familiesCount": {
+          "type": "number",
+          "description": "Families living on site"
+        },
+        "otherStateLabour": {
+          "type": "string",
+          "description": "States of origin for migrant workers"
+        },
+        "intraStateLabour": {
+          "type": "string",
+          "description": "Districts of origin within state"
+        },
+        "contactPersonName": {
+          "type": "string",
+          "description": "Supervisor or Mukadam name"
+        },
+        "contactPersonPhone": {
+          "type": "string",
+          "description": "Contact person telephone number"
+        },
+        "ownerName": {
+          "type": "string",
+          "description": "Worksite owner or employer name"
+        },
+        "ownerPhone": {
+          "type": "string",
+          "description": "Owner telephone number"
+        },
+        "htblElements": {
+          "type": "object",
+          "description": "12 statutory Human Trafficking and Bonded Labour indicators"
+        },
+        "conversationHighlights": {
+          "type": "string",
+          "description": "Field discussion highlights"
+        },
+        "observations": {
+          "type": "string",
+          "description": "Officer qualitative observations"
+        },
+        "challengesFaced": {
+          "type": "string",
+          "description": "Challenges encountered during visit"
+        },
+        "additionalRemarks": {
+          "type": "string",
+          "description": "Additional administrative notes"
+        },
+        "caseStatus": {
+          "type": "string",
+          "description": "Status of the worksite case"
+        },
+        "isHtblPotential": {
+          "type": "boolean",
+          "description": "Flag indicating presence of any HT&BL element"
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "User ID of creator"
+        },
+        "createdByEmail": {
+          "type": "string",
+          "description": "Email of creator"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Update timestamp"
+        }
+      },
+      "required": ["id", "industryName", "mandal", "dateOfVisit"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Authenticated field staff user profile",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "User UID"
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of staff"
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "field_staff"],
+          "description": "Permission role"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/visits/{visitId}": {
+      "schema": "Visit",
+      "description": "Collection of field visit and worksite mapping records"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of staff profiles and role assignments"
+    }
+  }
+}

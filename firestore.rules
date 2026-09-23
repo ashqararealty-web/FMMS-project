@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'ashqararealty@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // User profiles collection
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Visits collection
+    match /visits/{visitId} {
+      // Allow reading and querying visits for all field staff and public dashboard access
+      allow get, list: if true;
+
+      // Allow creating and updating visits
+      allow create: if isValidId(visitId);
+      allow update: if isValidId(visitId);
+
+      // Only admins or the original creator can delete visits
+      allow delete: if isAdmin() || (
+        isSignedIn() && resource.data.createdBy != null && resource.data.createdBy == request.auth.uid
+      );
+    }
+  }
+}

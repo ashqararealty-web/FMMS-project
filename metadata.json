@@ -1,0 +1,6 @@
+{
+  "name": "FMM BLSA Project",
+  "description": "FMM BLSA Project - Field Visit and Worksite Mapping System to document worksite visits, assess worker demographics, monitor HT&BL indicators, and maintain master Excel records.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
