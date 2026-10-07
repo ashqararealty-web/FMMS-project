@@ -29,6 +29,7 @@ interface ImportExportViewProps {
   onImportComplete: (newRecords: VisitRecord[]) => void;
   onImportToFirestore?: (records: VisitRecord[]) => Promise<{ added: number; updated: number }>;
   currentUser?: UserProfile | null;
+  onResetAllData?: () => Promise<void> | void;
 }
 
 export const ImportExportView: React.FC<ImportExportViewProps> = ({
@@ -36,6 +37,7 @@ export const ImportExportView: React.FC<ImportExportViewProps> = ({
   onImportComplete,
   onImportToFirestore,
   currentUser,
+  onResetAllData,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
@@ -325,12 +327,27 @@ export const ImportExportView: React.FC<ImportExportViewProps> = ({
 
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
             <span>Supported: .xlsx, .xls</span>
-            <button
-              onClick={handleDownloadBackup}
-              className="text-slate-600 hover:text-slate-900 font-semibold underline"
-            >
-              Download JSON Backup
-            </button>
+            <div className="flex items-center gap-3">
+              {onResetAllData && records.length > 0 && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (window.confirm('Reset and clear all test records and typed data from Cloud Firestore?')) {
+                      await onResetAllData();
+                    }
+                  }}
+                  className="text-rose-600 hover:text-rose-800 font-semibold underline"
+                >
+                  Reset Test Data
+                </button>
+              )}
+              <button
+                onClick={handleDownloadBackup}
+                className="text-slate-600 hover:text-slate-900 font-semibold underline"
+              >
+                Download JSON Backup
+              </button>
+            </div>
           </div>
         </div>
 

@@ -16,11 +16,13 @@ import {
   Users,
   AlertTriangle,
   ShieldCheck,
+  ShieldAlert,
   RotateCcw,
   CheckCircle2,
   Eye,
 } from 'lucide-react';
 import { exportToExcel } from '../services/excelService';
+import { computeHTBLFlag, getHTBLYesCount } from '../services/storage';
 
 interface ReportsViewProps {
   records: VisitRecord[];
@@ -98,8 +100,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       if (selectedCluster && r.clusterName !== selectedCluster) return false;
       if (selectedVillage && r.areaVillageWard !== selectedVillage) return false;
       if (selectedIndustry && r.industryType !== selectedIndustry) return false;
-      if (selectedHtblStatus === 'potential' && !r.isHtblPotential) return false;
-      if (selectedHtblStatus === 'clean' && r.isHtblPotential) return false;
+      const flag = r.htblFlag || computeHTBLFlag(r.htblElements);
+      if (selectedHtblStatus === 'pipeline' && flag !== 'Pipeline') return false;
+      if (selectedHtblStatus === 'potential' && flag !== 'Potential') return false;
+      if (selectedHtblStatus === 'identification' && flag !== 'Identification') return false;
+      if (selectedHtblStatus === 'clean' && flag !== 'None') return false;
       if (selectedCaseStatus && r.caseStatus !== selectedCaseStatus) return false;
       return true;
     });
@@ -331,8 +336,10 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               className="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
             >
               <option value="all">All Records</option>
-              <option value="potential">Potential HT&BL Cases Only</option>
-              <option value="clean">No Elements Identified Only</option>
+              <option value="pipeline">Pipeline Cases (4+ Yes)</option>
+              <option value="potential">Potential Cases (3 Yes)</option>
+              <option value="identification">Identification (1 Yes)</option>
+              <option value="clean">Clean / No Elements (0 Yes)</option>
             </select>
           </div>
 
@@ -422,15 +429,36 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
                     <td className="py-2.5 px-3">{r.mandal} ({r.areaVillageWard || '-'})</td>
                     <td className="py-2.5 px-3 font-bold text-slate-900">{r.approxWorkersCount}</td>
                     <td className="py-2.5 px-3">
-                      {r.isHtblPotential ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
-                          Potential
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">
-                          Clean
-                        </span>
-                      )}
+                      {(() => {
+                        const flag = r.htblFlag || computeHTBLFlag(r.htblElements);
+                        const count = r.htblYesCount !== undefined ? r.htblYesCount : getHTBLYesCount(r.htblElements);
+                        if (flag === 'Pipeline') {
+                          return (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                              Pipeline ({count} Yes)
+                            </span>
+                          );
+                        }
+                        if (flag === 'Potential') {
+                          return (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              Potential ({count} Yes)
+                            </span>
+                          );
+                        }
+                        if (flag === 'Identification') {
+                          return (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                              Identification ({count} Yes)
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            Clean (0 Yes)
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="py-2.5 px-3">{r.caseStatus}</td>
                     <td className="py-2.5 px-3 text-right">

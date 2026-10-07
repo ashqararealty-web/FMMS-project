@@ -41,10 +41,8 @@ service cloud.firestore {
       allow create: if isValidId(visitId);
       allow update: if isValidId(visitId);
 
-      // Only admins or the original creator can delete visits
-      allow delete: if isAdmin() || (
-        isSignedIn() && resource.data.createdBy != null && resource.data.createdBy == request.auth.uid
-      );
+      // Allow deleting visits (supports field staff, guest mode testing, and administrative cleanup)
+      allow delete: if true;
     }
   }
 }

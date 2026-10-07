@@ -5,7 +5,7 @@
 
 import * as XLSX from 'xlsx';
 import { VisitRecord, HTBLElements } from '../types';
-import { initialHTBLElements } from './storage';
+import { initialHTBLElements, computeHTBLFlag, getHTBLYesCount } from './storage';
 
 // Master standard Excel columns in exact sequence
 export const EXCEL_COLUMNS = [
@@ -46,6 +46,8 @@ export const EXCEL_COLUMNS = [
   'Freedom of Employment',
   'Right to Move Freely',
   'Right to Appropriate/Sell at Market',
+  'Victim Support',
+  'Ready to Rescue',
   'No Elements',
   'HT&BL Status',
   'Highlights of the Conversations',
@@ -55,7 +57,7 @@ export const EXCEL_COLUMNS = [
   'Additional Remarks',
 ] as const;
 
-function formatElement(elem: { present: boolean; details?: string; amount?: string | number }): string {
+function formatElement(elem?: { present?: boolean; details?: string; amount?: string | number } | null): string {
   if (!elem || !elem.present) return 'No';
   const parts: string[] = ['Yes'];
   if (elem.amount !== undefined && elem.amount !== '') {
@@ -99,7 +101,7 @@ export function recordToExcelRow(record: VisitRecord): Record<string, any> {
     'Contact Person Phone Number': record.contactPersonPhone || '',
     'Name of Owner': record.ownerName || '',
     'Owner Contact Number': record.ownerPhone || '',
-    'Debt/Obligation': formatElement(h.debtObligation),
+    'Debt/Obligation': (h.debtObligation?.details || '').trim(), // No Yes/No to debt/obligation per specification
     'Advance (Amount & Details)': formatElement(h.advance),
     'Custom/Social Obligation': formatElement(h.customSocialObligation),
     'Succession': formatElement(h.succession),
@@ -111,8 +113,17 @@ export function recordToExcelRow(record: VisitRecord): Record<string, any> {
     'Freedom of Employment': formatElement(h.freedomOfEmployment),
     'Right to Move Freely': formatElement(h.rightToMoveFreely),
     'Right to Appropriate/Sell at Market': formatElement(h.rightToAppropriateSellAtMarket),
+    'Victim Support': formatElement(h.victimSupport),
+    'Ready to Rescue': formatElement(h.readyToRescue),
     'No Elements': h.noElements ? 'Yes' : 'No',
-    'HT&BL Status': record.isHtblPotential ? 'Potential HT&BL Case' : 'No Elements Identified',
+    'HT&BL Status': (() => {
+      const flag = record.htblFlag || computeHTBLFlag(h);
+      const count = record.htblYesCount !== undefined ? record.htblYesCount : getHTBLYesCount(h);
+      if (flag === 'Pipeline') return `PIPELINE Case (${Boolean(h.readyToRescue?.present) ? 'Ready to Rescue: Yes' : `${count} Yes`})`;
+      if (flag === 'Potential') return `Potential Case (${count} Yes • Victim Support: Yes)`;
+      if (flag === 'Identification') return `Identification (${count} Yes in Debt Obligation)`;
+      return 'No Elements Identified';
+    })(),
     'Highlights of the Conversations': record.conversationHighlights || '',
     'Observation': record.observations || '',
     'Challenges Faced': record.challengesFaced || '',
@@ -131,14 +142,22 @@ export interface MasterExcelSheetData {
 /**
  * Returns structured Master Excel workbook data across all 7 sheets.
  * Automatically synchronizes with records whenever a visit is saved, edited, or deleted.
+ * Statutory classification rules:
+ * - Identification: 1 Yes indicator
+ * - Potential Cases: 3 Yes indicators
+ * - PIPELINE Cases: 4+ Yes indicators
  */
 export function getMasterExcelWorkbookData(records: VisitRecord[]): MasterExcelSheetData[] {
   const allRows = records.map(recordToExcelRow);
-  const potentialRecords = records.filter((r) => r.isHtblPotential);
-  const identificationRecords = records.filter(
-    (r) => r.caseStatus === 'Initial Screening' || !r.caseStatus
+  const potentialRecords = records.filter(
+    (r) => (r.htblFlag || computeHTBLFlag(r.htblElements)) === 'Potential'
   );
-  const pipelineRecords = records.filter((r) => r.caseStatus === 'Under Verification');
+  const identificationRecords = records.filter(
+    (r) => (r.htblFlag || computeHTBLFlag(r.htblElements)) === 'Identification'
+  );
+  const pipelineRecords = records.filter(
+    (r) => (r.htblFlag || computeHTBLFlag(r.htblElements)) === 'Pipeline'
+  );
   const rescueRecords = records.filter(
     (r) =>
       r.caseStatus === 'High Risk / Immediate Follow-up' ||
@@ -157,19 +176,19 @@ export function getMasterExcelWorkbookData(records: VisitRecord[]): MasterExcelS
     },
     {
       sheetName: 'Potential Cases',
-      description: 'Worksite visits with at least one HT&BL indicator identified',
+      description: 'Worksite visits flagged as Potential Cases (3 Yes indicators)',
       rows: potentialRecords.map(recordToExcelRow),
       records: potentialRecords,
     },
     {
       sheetName: 'Identification',
-      description: 'Cases in initial screening stage awaiting verification',
+      description: 'Worksite visits flagged in Identification stage (1 Yes indicator)',
       rows: identificationRecords.map(recordToExcelRow),
       records: identificationRecords,
     },
     {
       sheetName: 'PIPELINE Cases',
-      description: 'Cases actively undergoing on-site verification and evidence gathering',
+      description: 'Worksite visits flagged as PIPELINE Cases (4+ Yes indicators)',
       rows: pipelineRecords.map(recordToExcelRow),
       records: pipelineRecords,
     },
@@ -230,21 +249,23 @@ export function exportToExcel(records: VisitRecord[], customFilename?: string): 
   const primarySheet = createSheet(rows);
   XLSX.utils.book_append_sheet(workbook, primarySheet, 'Daily Visits&Mapping');
 
-  // 2. Potential Cases Sheet
-  const potentialRows = records.filter((r) => r.isHtblPotential).map(recordToExcelRow);
+  // 2. Potential Cases Sheet (3 Yes)
+  const potentialRows = records
+    .filter((r) => (r.htblFlag || computeHTBLFlag(r.htblElements)) === 'Potential')
+    .map(recordToExcelRow);
   const potentialSheet = createSheet(potentialRows);
   XLSX.utils.book_append_sheet(workbook, potentialSheet, 'Potential Cases');
 
-  // 3. Identification Sheet
+  // 3. Identification Sheet (1 Yes)
   const idRows = records
-    .filter((r) => r.caseStatus === 'Initial Screening' || !r.caseStatus)
+    .filter((r) => (r.htblFlag || computeHTBLFlag(r.htblElements)) === 'Identification')
     .map(recordToExcelRow);
   const idSheet = createSheet(idRows);
   XLSX.utils.book_append_sheet(workbook, idSheet, 'Identification');
 
-  // 4. PIPELINE Cases Sheet
+  // 4. PIPELINE Cases Sheet (4+ Yes)
   const pipelineRows = records
-    .filter((r) => r.caseStatus === 'Under Verification')
+    .filter((r) => (r.htblFlag || computeHTBLFlag(r.htblElements)) === 'Pipeline')
     .map(recordToExcelRow);
   const pipelineSheet = createSheet(pipelineRows);
   XLSX.utils.book_append_sheet(workbook, pipelineSheet, 'PIPELINE Cases');
@@ -507,8 +528,10 @@ export async function importFromExcel(file: File): Promise<{
           const ownerName = String(findVal(row, ['Name of Owner', 'Owner Name', 'Owner']) || '').trim();
           const ownerPhone = String(findVal(row, ['Owner Contact Number', 'Contact Number', 'Owner Phone']) || '').trim();
 
-          // HT&BL elements
-          const debtObligation = parseHTBLCell(findVal(row, ['Debt/Obligation', 'Debt Obligation', 'Debt']));
+          const rawDebtVal = String(findVal(row, ['Debt/Obligation', 'Debt Obligation', 'Debt']) || '').trim();
+          const cleanDebtDetails = rawDebtVal.replace(/^(yes|no)$/i, '').trim();
+          const debtObligation = { details: cleanDebtDetails };
+
           const advance = parseHTBLCell(findVal(row, ['Advance (Amount & Details)', 'Advance', 'Wage Advance']));
           const customSocialObligation = parseHTBLCell(findVal(row, ['Custom/Social Obligation', 'Custom Obligation']));
           const succession = parseHTBLCell(findVal(row, ['Succession', 'Hereditary']));
@@ -520,6 +543,8 @@ export async function importFromExcel(file: File): Promise<{
           const freedomOfEmployment = parseHTBLCell(findVal(row, ['Freedom of Employment', 'Freedom Employment']));
           const rightToMoveFreely = parseHTBLCell(findVal(row, ['Right to Move Freely', 'Move Freely', 'Freedom of Movement']));
           const rightToAppropriateSellAtMarket = parseHTBLCell(findVal(row, ['Right to Appropriate/Sell at Market', 'Appropriate Sell at Market', 'Market Freedom']));
+          const victimSupport = parseHTBLCell(findVal(row, ['Victim Support', 'Victim Support Required', 'Victim Support (Yes/No)']));
+          const readyToRescue = parseHTBLCell(findVal(row, ['Ready to Rescue', 'Ready to Rescue (Yes/No)', 'Rescue Ready']));
           
           const rawNoElements = findVal(row, ['No Elements', 'No Elements Identified']);
           const noElements = rawNoElements ? String(rawNoElements).toLowerCase().startsWith('y') : false;
@@ -537,23 +562,14 @@ export async function importFromExcel(file: File): Promise<{
             freedomOfEmployment,
             rightToMoveFreely,
             rightToAppropriateSellAtMarket,
+            victimSupport,
+            readyToRescue,
             noElements,
           };
 
-          const isHtblPotential = !noElements && Boolean(
-            debtObligation.present ||
-            advance.present ||
-            customSocialObligation.present ||
-            succession.present ||
-            economicConsideration.present ||
-            casteOrCommunity.present ||
-            suretyOrContract.present ||
-            interState.present ||
-            rightToMinimumWage.present ||
-            freedomOfEmployment.present ||
-            rightToMoveFreely.present ||
-            rightToAppropriateSellAtMarket.present
-          );
+          const flag = computeHTBLFlag(htblElements);
+          const yesCount = getHTBLYesCount(htblElements);
+          const isHtblPotential = flag === 'Potential';
 
           const conversationHighlights = String(findVal(row, ['Highlights of the Conversations', 'Conversation Highlights', 'Conversations']) || '').trim();
           const observations = String(findVal(row, ['Observation', 'Observations']) || '').trim();
@@ -591,6 +607,8 @@ export async function importFromExcel(file: File): Promise<{
             ownerPhone,
             htblElements,
             isHtblPotential,
+            htblFlag: flag,
+            htblYesCount: yesCount,
             conversationHighlights,
             observations,
             challengesFaced,

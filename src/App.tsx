@@ -13,6 +13,7 @@ import {
   subscribeToVisits,
   saveVisitToFirestore,
   deleteVisitFromFirestore,
+  clearAllVisitsFromFirestore,
   bulkImportToFirestore,
   syncUserProfile,
   getUserProfile,
@@ -30,6 +31,7 @@ import { ImportExportView } from './components/ImportExportView';
 import { SettingsView } from './components/SettingsView';
 import { MasterExcelView } from './components/MasterExcelView';
 import { AuthModal } from './components/AuthModal';
+import { ClickEffectsProvider, triggerConfettiBurst } from './components/ClickEffectsProvider';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -90,7 +92,7 @@ export default function App() {
 
   // Subscribe to real-time Cloud Firestore visits
   useEffect(() => {
-    // Seed initial cache from local storage if any
+    // Initial cache from local storage for fast render
     const localRecords = StorageService.getRecords();
     if (localRecords.length > 0) {
       setRecords(localRecords);
@@ -98,15 +100,10 @@ export default function App() {
 
     const unsubscribe = subscribeToVisits(
       (firestoreRecords) => {
-        if (firestoreRecords && firestoreRecords.length > 0) {
-          setRecords(firestoreRecords);
-          StorageService.saveAllRecords(firestoreRecords);
-        } else if (localRecords.length > 0) {
-          // If Firestore is brand new and empty, seed it with sample demo visits
-          bulkImportToFirestore(localRecords, currentUser).catch((err) => {
-            console.warn('Initial cloud seed notice:', err);
-          });
-        }
+        // Direct single-source-of-truth from Cloud Firestore
+        const recordsList = firestoreRecords || [];
+        setRecords(recordsList);
+        StorageService.saveAllRecords(recordsList);
       },
       (error) => {
         console.warn('Cloud Firestore listener notice (using cached data):', error);
@@ -114,7 +111,7 @@ export default function App() {
     );
 
     return () => unsubscribe();
-  }, [currentUser]);
+  }, []);
 
   // Dynamic Dashboard Stats calculated from live records
   const stats = useMemo(() => {
@@ -171,12 +168,14 @@ export default function App() {
       });
 
       setEditingRecord(null);
+      triggerConfettiBurst(0.5, 0.4);
       return saved;
     } catch (err: any) {
       console.error('Error saving record to Firestore, saving to local fallback:', err);
       const fallbackSaved = StorageService.saveRecord(recordData);
       setRecords(StorageService.getRecords());
       setEditingRecord(null);
+      triggerConfettiBurst(0.5, 0.4);
       return fallbackSaved;
     }
   };
@@ -201,6 +200,18 @@ export default function App() {
     return result;
   };
 
+  const handleResetAllData = async (): Promise<void> => {
+    try {
+      await clearAllVisitsFromFirestore();
+    } catch (err) {
+      console.warn('Firestore reset error:', err);
+    }
+    StorageService.clearAllRecords();
+    setRecords([]);
+    setEditingRecord(null);
+    setViewingRecord(null);
+  };
+
   const handleSignOut = async () => {
     try {
       await signOut(auth);
@@ -214,12 +225,14 @@ export default function App() {
     const dataToExport = customRecords && customRecords.length > 0 ? customRecords : records;
     const dateStr = new Date().toISOString().split('T')[0];
     exportToExcel(dataToExport, `Field_Visits_Master_Export_${dateStr}.xlsx`);
+    triggerConfettiBurst(0.85, 0.2);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
-      
-      {/* Top Navigation Bar */}
+    <ClickEffectsProvider>
+      <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+        
+        {/* Top Navigation Bar */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -287,6 +300,7 @@ export default function App() {
               onDeleteRecord={handleDeleteRecord}
               onExportExcel={handleExportAllExcel}
               onNewVisit={handleNewVisit}
+              onResetAllData={handleResetAllData}
             />
           )}
 
@@ -318,6 +332,7 @@ export default function App() {
               currentUser={currentUser}
               onImportComplete={(updated) => setRecords(updated)}
               onImportToFirestore={handleBulkImportToFirestore}
+              onResetAllData={handleResetAllData}
             />
           )}
 
@@ -328,6 +343,7 @@ export default function App() {
               isOnline={isOnline}
               onOpenAuth={() => setIsAuthModalOpen(true)}
               onSignOut={handleSignOut}
+              onResetAllData={handleResetAllData}
             />
           )}
         </main>
@@ -363,5 +379,6 @@ export default function App() {
         </div>
       </footer>
     </div>
+  </ClickEffectsProvider>
   );
 }

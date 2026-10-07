@@ -3,13 +3,15 @@
  */
 
 export interface HTBLElementDetail {
-  present: boolean;
+  present?: boolean;
   details?: string;
   amount?: number | string; // specifically for advance
 }
 
+export type HTBLFlag = 'None' | 'Identification' | 'Potential' | 'Pipeline';
+
 export interface HTBLElements {
-  debtObligation: HTBLElementDetail;
+  debtObligation?: HTBLElementDetail; // Debt/Obligation text/notes (no Yes/No)
   advance: HTBLElementDetail;
   customSocialObligation: HTBLElementDetail;
   succession: HTBLElementDetail;
@@ -21,6 +23,8 @@ export interface HTBLElements {
   freedomOfEmployment: HTBLElementDetail;
   rightToMoveFreely: HTBLElementDetail;
   rightToAppropriateSellAtMarket: HTBLElementDetail;
+  victimSupport?: HTBLElementDetail; // Section D: Victim Support Yes/No
+  readyToRescue?: HTBLElementDetail; // Section D: Ready to Rescue Yes/No (If Yes -> Pipeline Case)
   noElements: boolean;
 }
 
@@ -143,30 +147,68 @@ export const REVENUE_DIVISION_OPTIONS = [
 
 export type RevenueDivisionName = typeof REVENUE_DIVISION_OPTIONS[number];
 
+/**
+ * District wise Police Station mapping for Warangal, Hanumakonda, and Bhupalpally.
+ */
+export const DISTRICT_POLICE_STATION_MAP: Record<ClusterName, readonly string[]> = {
+  Warangal: [
+    'Warangal Town PS',
+    'Warangal Rural PS',
+    'Khila Warangal PS',
+    'Mills Colony PS',
+    'Inthezargunj PS',
+    'Mamnoor PS',
+    'Geesugonda PS',
+    'Sangem PS',
+    'Wardhannapet PS',
+    'Parvathagiri PS',
+    'Raiparthy PS',
+    'Narsampet PS',
+    'Chennaraopet PS',
+    'Duggondi PS',
+    'Khanapur PS',
+    'Nekkonda PS',
+    'Nallabelly PS',
+  ],
+  Hanumakonda: [
+    'Hanumakonda PS',
+    'Kazipet PS',
+    'Subedari PS',
+    'Kakatiya University (KU) PS',
+    'Hasanparthy PS',
+    'Inavole PS',
+    'Dharmasagar PS',
+    'Velair PS',
+    'Elkathurthi PS',
+    'Bheemadevarapalli PS',
+    'Kamalapur PS',
+    'Parkal PS',
+    'Nadikuda PS',
+    'Damera PS',
+    'Athmakur PS',
+    'Shayampet PS',
+  ],
+  Bhupalpally: [
+    'Bhupalpally PS',
+    'Chityal PS',
+    'Ghanpur PS',
+    'Kataram PS',
+    'Mahadevpur PS',
+    'Malharrao (Koyyur) PS',
+    'Mogullapally PS',
+    'Mutharam PS',
+    'Palimela PS',
+    'Regonda PS',
+    'Tekumatla PS',
+    'Kaleshwaram PS',
+    'Kothapally PS',
+  ],
+} as const;
+
 export const POLICE_STATION_OPTIONS = [
-  'Warangal Rural PS',
-  'Narsampet PS',
-  'Geesugonda PS',
-  'Chennaraopet PS',
-  'Duggondi PS',
-  'Khanapur PS',
-  'Khila Warangal PS',
-  'Nallabelly PS',
-  'Nekkonda PS',
-  'Parvathagiri PS',
-  'Raiparthy PS',
-  'Sangem PS',
-  'Wardhannapet PS',
-  'Hanumakonda PS',
-  'Kazipet PS',
-  'Inavole PS',
-  'Hasanparthy PS',
-  'Parkal PS',
-  'Bhupalpally PS',
-  'Kataram PS',
-  'Mahadevpur PS',
-  'Chityal PS',
-  'Regonda PS',
+  ...DISTRICT_POLICE_STATION_MAP.Warangal,
+  ...DISTRICT_POLICE_STATION_MAP.Hanumakonda,
+  ...DISTRICT_POLICE_STATION_MAP.Bhupalpally,
 ] as const;
 
 export type PoliceStationName = typeof POLICE_STATION_OPTIONS[number];
@@ -210,7 +252,9 @@ export interface VisitRecord {
 
   // SECTION D – HT&BL ELEMENTS
   htblElements: HTBLElements;
-  isHtblPotential: boolean; // Computed / summary flag
+  isHtblPotential: boolean; // Computed / summary flag (true when 3 Yes)
+  htblFlag?: HTBLFlag; // None | Identification (1 Yes) | Potential (3 Yes) | Pipeline (4+ Yes)
+  htblYesCount?: number; // Total number of active Yes statutory indicators
 
   // SECTION E – FIELD VISIT INFORMATION
   conversationHighlights: string;
@@ -239,7 +283,9 @@ export interface DashboardStats {
   femaleWorkers: number;
   interStateLabourCases: number;
   intraStateLabourCases: number;
-  htblPotentialCases: number;
+  htblPotentialCases: number; // 3 Yes
+  htblIdentificationCases?: number; // 1 Yes
+  htblPipelineCases?: number; // 4+ Yes
   currentMonthVisits: number;
 }
 
@@ -251,7 +297,7 @@ export interface FilterOptions {
   mandal: string;
   revenueDivision: string;
   industryType: string;
-  htblStatus: 'all' | 'htbl_potential' | 'no_elements';
+  htblStatus: 'all' | 'htbl_potential' | 'htbl_identification' | 'htbl_pipeline' | 'no_elements';
   caseStatus: string;
 }
 

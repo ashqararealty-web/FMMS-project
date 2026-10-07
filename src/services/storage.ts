@@ -3,7 +3,7 @@
  * All statistics and counts are computed dynamically from Firestore records.
  */
 
-import { VisitRecord, HTBLElements, DashboardStats } from '../types';
+import { VisitRecord, HTBLElements, DashboardStats, HTBLFlag } from '../types';
 
 export const initialHTBLElements: HTBLElements = {
   debtObligation: { present: false, details: '' },
@@ -18,26 +18,75 @@ export const initialHTBLElements: HTBLElements = {
   freedomOfEmployment: { present: false, details: '' },
   rightToMoveFreely: { present: false, details: '' },
   rightToAppropriateSellAtMarket: { present: false, details: '' },
+  victimSupport: { present: false, details: '' },
+  readyToRescue: { present: false, details: '' },
   noElements: true,
 };
 
-// Compute whether any HT&BL element is present
-export function computeIsHtblPotential(elements: HTBLElements): boolean {
-  if (!elements || elements.noElements) return false;
-  return Boolean(
-    elements.debtObligation?.present ||
-    elements.advance?.present ||
-    elements.customSocialObligation?.present ||
-    elements.succession?.present ||
-    elements.economicConsideration?.present ||
-    elements.casteOrCommunity?.present ||
-    elements.suretyOrContract?.present ||
-    elements.interState?.present ||
-    elements.rightToMinimumWage?.present ||
-    elements.freedomOfEmployment?.present ||
-    elements.rightToMoveFreely?.present ||
-    elements.rightToAppropriateSellAtMarket?.present
-  );
+/**
+ * Counts active statutory Yes/No indicators in debt obligation / bonded labour elements.
+ */
+export function getHTBLYesCount(elements?: HTBLElements | null): number {
+  if (!elements || elements.noElements) return 0;
+  let count = 0;
+  if (elements.debtObligation?.present) count++;
+  if (elements.advance?.present) count++;
+  if (elements.customSocialObligation?.present) count++;
+  if (elements.succession?.present) count++;
+  if (elements.economicConsideration?.present) count++;
+  if (elements.casteOrCommunity?.present) count++;
+  if (elements.suretyOrContract?.present) count++;
+  if (elements.interState?.present) count++;
+  if (elements.rightToMinimumWage?.present) count++;
+  if (elements.freedomOfEmployment?.present) count++;
+  if (elements.rightToMoveFreely?.present) count++;
+  if (elements.rightToAppropriateSellAtMarket?.present) count++;
+  return count;
+}
+
+/**
+ * Computes statutory HT&BL classification flag:
+ * - Pipeline: ready to rescue 1
+ * - Potential Case: at least 3 yes victim support (if there are more than 3 yes with victim support than also consider it as potential case)
+ * - Identification: 3 yes in debt obligation
+ */
+export function computeHTBLFlag(elements?: HTBLElements | null): HTBLFlag {
+  if (!elements || elements.noElements) return 'None';
+
+  // Pipeline : ready to rescue 1
+  if (Boolean(elements.readyToRescue?.present)) {
+    return 'Pipeline';
+  }
+
+  const count = getHTBLYesCount(elements);
+  const isVictimSupport = Boolean(elements.victimSupport?.present);
+
+  // Potential case : at least 3 yes victim support (if there are more than 3 yes with victim support than also consider it as potential case)
+  if (isVictimSupport && count >= 3) {
+    return 'Potential';
+  }
+
+  // Identification : 3 yes in debt obligation
+  if (count >= 3) {
+    return 'Identification';
+  }
+
+  return 'None';
+}
+
+// Compute whether the record is flagged as a Potential Case (at least 3 Yes + Victim Support)
+export function computeIsHtblPotential(elements?: HTBLElements | null): boolean {
+  return computeHTBLFlag(elements) === 'Potential';
+}
+
+// Compute whether the record is flagged as an Identification Case (3 Yes in debt obligation)
+export function computeIsHtblIdentification(elements?: HTBLElements | null): boolean {
+  return computeHTBLFlag(elements) === 'Identification';
+}
+
+// Compute whether the record is flagged as a PIPELINE Case (ready to rescue 1)
+export function computeIsHtblPipeline(elements?: HTBLElements | null): boolean {
+  return computeHTBLFlag(elements) === 'Pipeline';
 }
 
 // Dynamically compute dashboard statistics from actual Firestore records
@@ -56,6 +105,8 @@ export function calculateDashboardStats(records: VisitRecord[]): DashboardStats 
   let interStateLabourCases = 0;
   let intraStateLabourCases = 0;
   let htblPotentialCases = 0;
+  let htblIdentificationCases = 0;
+  let htblPipelineCases = 0;
   let currentMonthVisits = 0;
 
   records.forEach((r) => {
@@ -69,8 +120,16 @@ export function calculateDashboardStats(records: VisitRecord[]): DashboardStats 
     if (r.intraStateLabour && r.intraStateLabour.trim() && r.intraStateLabour.toLowerCase() !== 'none') {
       intraStateLabourCases++;
     }
-    if (r.isHtblPotential) {
+
+    const flag = r.htblFlag || computeHTBLFlag(r.htblElements);
+    if (flag === 'Potential' || r.isHtblPotential) {
       htblPotentialCases++;
+    }
+    if (flag === 'Identification') {
+      htblIdentificationCases++;
+    }
+    if (flag === 'Pipeline') {
+      htblPipelineCases++;
     }
 
     if (r.dateOfVisit) {
@@ -90,15 +149,24 @@ export function calculateDashboardStats(records: VisitRecord[]): DashboardStats 
     interStateLabourCases,
     intraStateLabourCases,
     htblPotentialCases,
+    htblIdentificationCases,
+    htblPipelineCases,
     currentMonthVisits,
   };
 }
 
-const STORAGE_KEY = 'field_visit_records_v1';
+const STORAGE_KEY = 'field_visit_records_v3';
 
 export const StorageService = {
   getRecords(): VisitRecord[] {
     try {
+      // Purge old legacy test storage keys if still present
+      if (localStorage.getItem('field_visit_records_v1')) {
+        localStorage.removeItem('field_visit_records_v1');
+      }
+      if (localStorage.getItem('field_visit_records_v2')) {
+        localStorage.removeItem('field_visit_records_v2');
+      }
       const data = localStorage.getItem(STORAGE_KEY);
       if (data) {
         return JSON.parse(data);
@@ -131,6 +199,8 @@ export const StorageService = {
 
     const existingIndex = records.findIndex((r) => r.id === id);
     let savedRecord: VisitRecord;
+    const flag = computeHTBLFlag(recordData.htblElements);
+    const yesCount = getHTBLYesCount(recordData.htblElements);
 
     if (existingIndex >= 0) {
       savedRecord = {
@@ -138,6 +208,8 @@ export const StorageService = {
         ...recordData,
         id,
         isHtblPotential: isHtbl,
+        htblFlag: flag,
+        htblYesCount: yesCount,
         updatedAt: now,
       };
       records[existingIndex] = savedRecord;
@@ -146,6 +218,8 @@ export const StorageService = {
         ...recordData,
         id,
         isHtblPotential: isHtbl,
+        htblFlag: flag,
+        htblYesCount: yesCount,
         createdAt: now,
         updatedAt: now,
       };
@@ -167,6 +241,19 @@ export const StorageService = {
   deleteRecord(id: string): void {
     const records = this.getRecords().filter((r) => r.id !== id);
     this.saveAllRecords(records);
+  },
+
+  clearAllRecords(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem('field_visit_records_v2');
+      localStorage.removeItem('field_visit_records_v1');
+      localStorage.removeItem('fv_default_officer');
+      localStorage.removeItem('fv_default_cluster');
+      localStorage.removeItem('fv_organization');
+    } catch (e) {
+      console.error('Error clearing localStorage records:', e);
+    }
   },
 
   bulkImport(newRecords: VisitRecord[]): { added: number; updated: number } {

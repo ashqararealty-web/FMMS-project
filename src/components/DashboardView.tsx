@@ -1,6 +1,7 @@
 import React from 'react';
 import { VisitRecord, DashboardStats, ActiveTab } from '../types';
 import { FmmLogo } from './FmmLogo';
+import { computeHTBLFlag, getHTBLYesCount } from '../services/storage';
 import {
   ClipboardList,
   Building2,
@@ -114,15 +115,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       description: 'Visits with other district workers',
     },
     {
-      id: 'stat-htbl-potential',
-      label: 'HT&BL Potential Cases',
-      value: stats.htblPotentialCases,
+      id: 'stat-htbl-pipeline',
+      label: 'PIPELINE Cases',
+      value: stats.htblPipelineCases || 0,
       icon: AlertTriangle,
       bgColor: 'bg-rose-50',
       iconColor: 'text-rose-700',
       borderColor: 'border-rose-200',
-      badge: stats.htblPotentialCases > 0 ? 'Requires Follow-up' : undefined,
-      description: 'Bonded labour / trafficking elements flagged',
+      badge: (stats.htblPipelineCases || 0) > 0 ? '4+ Yes Indicators' : undefined,
+      description: 'Flagged for pipeline evidence gathering',
+    },
+    {
+      id: 'stat-htbl-potential',
+      label: 'Potential Cases',
+      value: stats.htblPotentialCases,
+      icon: AlertTriangle,
+      bgColor: 'bg-amber-50',
+      iconColor: 'text-amber-700',
+      borderColor: 'border-amber-200',
+      badge: stats.htblPotentialCases > 0 ? 'Victim Support Yes / Potential' : undefined,
+      description: 'Flagged as potential HT&BL cases (Victim Support Yes)',
+    },
+    {
+      id: 'stat-htbl-identification',
+      label: 'Identification Stage',
+      value: stats.htblIdentificationCases || 0,
+      icon: ShieldAlert,
+      bgColor: 'bg-blue-50',
+      iconColor: 'text-blue-700',
+      borderColor: 'border-blue-200',
+      badge: (stats.htblIdentificationCases || 0) > 0 ? '3 Yes Indicators' : undefined,
+      description: 'Identification screening cases (3 Yes indicators)',
     },
     {
       id: 'stat-current-month',
@@ -406,17 +429,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     </div>
 
                     <div className="shrink-0 text-right">
-                      {record.isHtblPotential ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
-                          <AlertTriangle className="w-3 h-3 text-rose-600" />
-                          Potential
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">
-                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                          Clean
-                        </span>
-                      )}
+                      {(() => {
+                        const flag = record.htblFlag || computeHTBLFlag(record.htblElements);
+                        const count = record.htblYesCount !== undefined ? record.htblYesCount : getHTBLYesCount(record.htblElements);
+                        if (flag === 'Pipeline') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                              <AlertTriangle className="w-3 h-3 text-rose-600" />
+                              Pipeline ({count} Yes)
+                            </span>
+                          );
+                        }
+                        if (flag === 'Potential') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              <AlertTriangle className="w-3 h-3 text-amber-600" />
+                              Potential ({count} Yes)
+                            </span>
+                          );
+                        }
+                        if (flag === 'Identification') {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                              <ShieldAlert className="w-3 h-3 text-blue-600" />
+                              Identification ({count} Yes)
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                            Clean (0 Yes)
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -480,17 +526,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </span>
                       </td>
                       <td className="py-2.5 px-3 whitespace-nowrap">
-                        {record.isHtblPotential ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
-                            <AlertTriangle className="w-3 h-3 text-rose-600" />
-                            Potential Case
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">
-                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                            No Elements
-                          </span>
-                        )}
+                        {(() => {
+                          const flag = record.htblFlag || computeHTBLFlag(record.htblElements);
+                          const count = record.htblYesCount !== undefined ? record.htblYesCount : getHTBLYesCount(record.htblElements);
+                          if (flag === 'Pipeline') {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                Pipeline ({count} Yes)
+                              </span>
+                            );
+                          }
+                          if (flag === 'Potential') {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                Potential ({count} Yes)
+                              </span>
+                            );
+                          }
+                          if (flag === 'Identification') {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                <ShieldAlert className="w-3 h-3 text-blue-600" />
+                                Identification ({count} Yes)
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                              Clean (0 Yes)
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="py-2.5 px-3 text-right whitespace-nowrap">
                         <button

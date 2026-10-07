@@ -12,8 +12,14 @@ import {
   MANDAL_OPTIONS,
   REVENUE_DIVISION_OPTIONS,
   POLICE_STATION_OPTIONS,
+  DISTRICT_POLICE_STATION_MAP,
 } from '../types';
-import { initialHTBLElements, computeIsHtblPotential } from '../services/storage';
+import {
+  initialHTBLElements,
+  computeIsHtblPotential,
+  computeHTBLFlag,
+  getHTBLYesCount,
+} from '../services/storage';
 import {
   Building2,
   Calendar,
@@ -25,6 +31,7 @@ import {
   Save,
   CheckCircle,
   AlertCircle,
+  AlertTriangle,
   ExternalLink,
   RotateCcw,
   ArrowRight,
@@ -33,6 +40,7 @@ import {
   Check,
   X,
   FileSpreadsheet,
+  ArrowUp,
 } from 'lucide-react';
 
 interface VisitFormViewProps {
@@ -171,6 +179,7 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
   const [sectionTransitionNote, setSectionTransitionNote] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGlidingUp, setIsGlidingUp] = useState(false);
 
   const clearError = (field: string) => {
     setErrors((prev) => {
@@ -179,6 +188,336 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
       delete next[field];
       return next;
     });
+    const el = document.getElementById(`field-${field}`);
+    if (el) {
+      el.classList.remove('required-error');
+    }
+  };
+
+  // Helper to scroll smoothly to missing field, highlight it, and focus it
+  const scrollToMissingField = (missing: {
+    key: string;
+    section: 'A' | 'B' | 'C' | 'D' | 'E';
+    elementId: string;
+    message: string;
+  }) => {
+    // 1. If in another tab / section, switch to it immediately
+    if (activeSection !== missing.section) {
+      setActiveSection(missing.section);
+    }
+
+    const runScroll = () => {
+      let el = document.getElementById(missing.elementId);
+      if (!el && missing.elementId === 'field-reportingPerson') {
+        el = document.getElementById('field-reportingPerson-custom') || el;
+      }
+      if (!el && missing.elementId === 'field-clusterName') {
+        el = document.getElementById('field-clusterName-custom') || el;
+      }
+      if (!el && missing.elementId === 'field-mandal') {
+        el = document.getElementById('field-mandal-custom') || el;
+      }
+      if (!el && missing.elementId === 'field-revenueDivision') {
+        el = document.getElementById('field-revenueDivision-custom') || el;
+      }
+      if (!el && missing.elementId === 'field-policeStation') {
+        el = document.getElementById('field-policeStation-custom') || el;
+      }
+
+      if (el) {
+        // Clear previous .required-error highlight on other elements
+        document.querySelectorAll('.required-error').forEach((node) => {
+          if (node !== el) {
+            node.classList.remove('required-error');
+          }
+        });
+
+        // Add visual error highlight
+        el.classList.add('required-error');
+
+        // Smoothly scroll the page to that field around center of screen
+        el.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+
+        // Auto focus input after scroll begins without interrupting smooth scrolling
+        setTimeout(() => {
+          try {
+            if (typeof el.focus === 'function') {
+              el.focus({ preventScroll: true });
+            }
+          } catch {
+            // ignore
+          }
+        }, 220);
+      }
+    };
+
+    if (activeSection !== missing.section) {
+      setTimeout(runScroll, 120);
+    } else {
+      runScroll();
+    }
+  };
+
+  // Validate entire form in natural top-to-bottom order and return the first missing required field
+  const validateAndFindMissing = (): {
+    isValid: boolean;
+    errs: Record<string, string>;
+    firstMissing: {
+      key: string;
+      section: 'A' | 'B' | 'C' | 'D' | 'E';
+      elementId: string;
+      message: string;
+    } | null;
+  } => {
+    const errs: Record<string, string> = {};
+    const missingList: Array<{
+      key: string;
+      section: 'A' | 'B' | 'C' | 'D' | 'E';
+      elementId: string;
+      message: string;
+    }> = [];
+
+    // SECTION A – NATURAL TOP-TO-BOTTOM ORDER
+    if (!reportingPerson.trim()) {
+      const msg = 'Please select a reporting person.';
+      errs.reportingPerson = msg;
+      missingList.push({ key: 'reportingPerson', section: 'A', elementId: 'field-reportingPerson', message: msg });
+    }
+    if (!dateOfVisit) {
+      const msg = 'Date of visit is required.';
+      errs.dateOfVisit = msg;
+      missingList.push({ key: 'dateOfVisit', section: 'A', elementId: 'field-dateOfVisit', message: msg });
+    }
+    if (!clusterName.trim()) {
+      const msg = 'Please select a district.';
+      errs.clusterName = msg;
+      missingList.push({ key: 'clusterName', section: 'A', elementId: 'field-clusterName', message: msg });
+    }
+    if (!mandal.trim()) {
+      const msg = !clusterName.trim()
+        ? 'Please select a district first to choose a mandal.'
+        : 'Please select a mandal.';
+      errs.mandal = msg;
+      missingList.push({ key: 'mandal', section: 'A', elementId: 'field-mandal', message: msg });
+    }
+    if (!areaVillageWard.trim()) {
+      const msg = 'Village (area / village / ward) is required.';
+      errs.areaVillageWard = msg;
+      missingList.push({ key: 'areaVillageWard', section: 'A', elementId: 'field-areaVillageWard', message: msg });
+    }
+    if (!revenueDivision.trim()) {
+      const msg = 'Please select a revenue division.';
+      errs.revenueDivision = msg;
+      missingList.push({ key: 'revenueDivision', section: 'A', elementId: 'field-revenueDivision', message: msg });
+    }
+    if (!policeStation.trim()) {
+      const msg = 'Please select a police station.';
+      errs.policeStation = msg;
+      missingList.push({ key: 'policeStation', section: 'A', elementId: 'field-policeStation', message: msg });
+    }
+    if (!industryType.trim()) {
+      const msg = 'Please select an industry type.';
+      errs.industryType = msg;
+      missingList.push({ key: 'industryType', section: 'A', elementId: 'field-industryType', message: msg });
+    }
+    if (!industryName.trim() && !initialRecord?.industryName?.trim()) {
+      const msg = 'Name of the industry / worksite is required.';
+      errs.industryName = msg;
+      missingList.push({ key: 'industryName', section: 'A', elementId: 'field-industryName', message: msg });
+    }
+    if (!seasonality.trim()) {
+      const msg = 'Please select a worksite season.';
+      errs.seasonality = msg;
+      missingList.push({ key: 'seasonality', section: 'A', elementId: 'field-seasonality', message: msg });
+    }
+
+    // SECTION B
+    const totalWorkers = Number(approxWorkersCount) || 0;
+    const males = Number(maleWorkersCount) || 0;
+    const females = Number(femaleWorkersCount) || 0;
+    if (males + females > totalWorkers && totalWorkers > 0 && !genderMismatchConfirmed) {
+      setShowGenderMismatchConfirm(true);
+      const msg = `Male (${males}) + Female (${females}) sum (${males + females}) exceeds Approx Workers (${totalWorkers}).`;
+      errs.approxWorkersCount = msg;
+      missingList.push({ key: 'approxWorkersCount', section: 'B', elementId: 'field-approxWorkersCount', message: msg });
+    }
+
+    // SECTION C
+    const validatePhone = (num: string, fieldName: string, elementId: string) => {
+      const clean = num.replace(/[\s\-\+]/g, '');
+      if (clean && clean.length > 0) {
+        if (!/^[6-9]\d{9}$/.test(clean) && !/^91[6-9]\d{9}$/.test(clean)) {
+          const msg = 'Enter a valid 10-digit mobile number';
+          errs[fieldName] = msg;
+          missingList.push({ key: fieldName, section: 'C', elementId, message: msg });
+        }
+      }
+    };
+    validatePhone(contactPersonPhone, 'contactPersonPhone', 'field-contactPersonPhone');
+    validatePhone(ownerPhone, 'ownerPhone', 'field-ownerPhone');
+
+    return {
+      isValid: missingList.length === 0,
+      errs,
+      firstMissing: missingList[0] || null,
+    };
+  };
+
+  const validateSection = (sec: 'A' | 'B' | 'C' | 'D' | 'E'): boolean => {
+    if (sec === 'A') {
+      const errs: Record<string, string> = {};
+      const missingList: Array<{ key: string; section: 'A'; elementId: string; message: string }> = [];
+
+      if (!reportingPerson.trim()) {
+        const msg = 'Please select a reporting person.';
+        errs.reportingPerson = msg;
+        missingList.push({ key: 'reportingPerson', section: 'A', elementId: 'field-reportingPerson', message: msg });
+      }
+      if (!dateOfVisit) {
+        const msg = 'Date of visit is required.';
+        errs.dateOfVisit = msg;
+        missingList.push({ key: 'dateOfVisit', section: 'A', elementId: 'field-dateOfVisit', message: msg });
+      }
+      if (!clusterName.trim()) {
+        const msg = 'Please select a district.';
+        errs.clusterName = msg;
+        missingList.push({ key: 'clusterName', section: 'A', elementId: 'field-clusterName', message: msg });
+      }
+      if (!mandal.trim()) {
+        const msg = !clusterName.trim()
+          ? 'Please select a district first to choose a mandal.'
+          : 'Please select a mandal.';
+        errs.mandal = msg;
+        missingList.push({ key: 'mandal', section: 'A', elementId: 'field-mandal', message: msg });
+      }
+      if (!areaVillageWard.trim()) {
+        const msg = 'Village (area / village / ward) is required.';
+        errs.areaVillageWard = msg;
+        missingList.push({ key: 'areaVillageWard', section: 'A', elementId: 'field-areaVillageWard', message: msg });
+      }
+      if (!revenueDivision.trim()) {
+        const msg = 'Please select a revenue division.';
+        errs.revenueDivision = msg;
+        missingList.push({ key: 'revenueDivision', section: 'A', elementId: 'field-revenueDivision', message: msg });
+      }
+      if (!policeStation.trim()) {
+        const msg = 'Please select a police station.';
+        errs.policeStation = msg;
+        missingList.push({ key: 'policeStation', section: 'A', elementId: 'field-policeStation', message: msg });
+      }
+      if (!industryType.trim()) {
+        const msg = 'Please select an industry type.';
+        errs.industryType = msg;
+        missingList.push({ key: 'industryType', section: 'A', elementId: 'field-industryType', message: msg });
+      }
+      if (!industryName.trim() && !initialRecord?.industryName?.trim()) {
+        const msg = 'Name of the industry / worksite is required.';
+        errs.industryName = msg;
+        missingList.push({ key: 'industryName', section: 'A', elementId: 'field-industryName', message: msg });
+      }
+      if (!seasonality.trim()) {
+        const msg = 'Please select a worksite season.';
+        errs.seasonality = msg;
+        missingList.push({ key: 'seasonality', section: 'A', elementId: 'field-seasonality', message: msg });
+      }
+
+      setErrors((prev) => ({ ...prev, ...errs }));
+      if (missingList.length > 0) {
+        scrollToMissingField(missingList[0]);
+        return false;
+      }
+      return true;
+    }
+
+    if (sec === 'B') {
+      const errs: Record<string, string> = {};
+      const totalWorkers = Number(approxWorkersCount) || 0;
+      const males = Number(maleWorkersCount) || 0;
+      const females = Number(femaleWorkersCount) || 0;
+
+      if (males + females > totalWorkers && totalWorkers > 0 && !genderMismatchConfirmed) {
+        setShowGenderMismatchConfirm(true);
+        const msg = `Male (${males}) + Female (${females}) sum (${males + females}) exceeds Approx Workers (${totalWorkers}).`;
+        errs.approxWorkersCount = msg;
+        setErrors((prev) => ({ ...prev, ...errs }));
+        scrollToMissingField({ key: 'approxWorkersCount', section: 'B', elementId: 'field-approxWorkersCount', message: msg });
+        return false;
+      }
+      return true;
+    }
+
+    if (sec === 'C') {
+      const errs: Record<string, string> = {};
+      const missingList: Array<{ key: string; section: 'C'; elementId: string; message: string }> = [];
+
+      const validatePhone = (num: string, fieldName: string, elementId: string) => {
+        const clean = num.replace(/[\s\-\+]/g, '');
+        if (clean && clean.length > 0) {
+          if (!/^[6-9]\d{9}$/.test(clean) && !/^91[6-9]\d{9}$/.test(clean)) {
+            const msg = 'Enter a valid 10-digit mobile number';
+            errs[fieldName] = msg;
+            missingList.push({ key: fieldName, section: 'C', elementId, message: msg });
+          }
+        }
+      };
+
+      validatePhone(contactPersonPhone, 'contactPersonPhone', 'field-contactPersonPhone');
+      validatePhone(ownerPhone, 'ownerPhone', 'field-ownerPhone');
+
+      setErrors((prev) => ({ ...prev, ...errs }));
+      if (missingList.length > 0) {
+        scrollToMissingField(missingList[0]);
+        return false;
+      }
+      return true;
+    }
+
+    return true;
+  };
+
+  // Reset/Clear all input fields in the form
+  const handleResetForm = () => {
+    setReportingPerson('');
+    setDateOfVisit(new Date().toISOString().split('T')[0]);
+    setNoOfVisit('1st Visit');
+    setMonth(MONTHS[new Date().getMonth()]);
+    setClusterName('');
+    setIndustryType('Brick Kiln');
+    setIndustryName('');
+    setLocationLink('');
+    setAreaVillageWard('');
+    setMandal('');
+    setRevenueDivision('');
+    setPoliceStation('');
+    setSeasonality('Seasonal');
+
+    setInteractedPersonsCount('');
+    setApproxWorkersCount('');
+    setMaleWorkersCount('');
+    setFemaleWorkersCount('');
+    setFamiliesCount('');
+    setOtherStateLabour('');
+    setIntraStateLabour('');
+
+    setContactPersonName('');
+    setContactPersonPhone('');
+    setOwnerName('');
+    setOwnerPhone('');
+
+    setHtblElements(JSON.parse(JSON.stringify(initialHTBLElements)));
+
+    setConversationHighlights('');
+    setObservations('');
+    setChallengesFaced('');
+    setCaseStatus('Initial Screening');
+    setAdditionalRemarks('');
+
+    setErrors({});
+    document.querySelectorAll('.required-error').forEach((el) => el.classList.remove('required-error'));
+    setActiveSection('A');
   };
 
   // Dependent mandals based on selected cluster
@@ -190,13 +529,31 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
     return [];
   }, [clusterName]);
 
-  // Handle cluster change with automatic mandal reset
+  // Dependent police stations based on selected cluster (district)
+  const availablePoliceStations = useMemo(() => {
+    if (!clusterName) return [];
+    if (clusterName in DISTRICT_POLICE_STATION_MAP) {
+      return DISTRICT_POLICE_STATION_MAP[clusterName as ClusterName] || [];
+    }
+    return [];
+  }, [clusterName]);
+
+  // Handle cluster change with automatic mandal and police station reset
   const handleClusterChange = (newCluster: string) => {
     setClusterName(newCluster);
     // When the Cluster is changed, automatically clear/reset the previously selected Mandal
     setMandal('');
+    if (newCluster && newCluster in DISTRICT_POLICE_STATION_MAP) {
+      const allowedPS = DISTRICT_POLICE_STATION_MAP[newCluster as ClusterName];
+      if (policeStation && !allowedPS.includes(policeStation as any)) {
+        setPoliceStation('');
+      }
+    } else if (!newCluster) {
+      setPoliceStation('');
+    }
     clearError('clusterName');
     clearError('mandal');
+    clearError('policeStation');
   };
 
   // Auto-update month when date changes
@@ -262,145 +619,12 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
     }
   };
 
-  // Validate individual section before advancing
-  const validateSection = (sec: 'A' | 'B' | 'C' | 'D' | 'E'): boolean => {
-    if (sec === 'A') {
-      const errs: Record<string, string> = {};
-      if (!reportingPerson.trim()) {
-        errs.reportingPerson = 'Reporting Person is required';
-      }
-      if (!dateOfVisit) {
-        errs.dateOfVisit = 'Date of visit is required';
-      }
-      if (!clusterName.trim()) {
-        errs.clusterName = 'Name of Cluster is required';
-      }
-      if (!mandal.trim()) {
-        errs.mandal = !clusterName.trim()
-          ? 'Please select a Cluster first'
-          : 'Mandal is required';
-      }
-
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next.reportingPerson;
-        delete next.dateOfVisit;
-        delete next.clusterName;
-        delete next.mandal;
-        return { ...next, ...errs };
-      });
-
-      return Object.keys(errs).length === 0;
-    }
-
-    if (sec === 'B') {
-      const errs: Record<string, string> = {};
-      const totalWorkers = Number(approxWorkersCount) || 0;
-      const males = Number(maleWorkersCount) || 0;
-      const females = Number(femaleWorkersCount) || 0;
-
-      if (males + females > totalWorkers && totalWorkers > 0 && !genderMismatchConfirmed) {
-        setShowGenderMismatchConfirm(true);
-        errs.approxWorkersCount = `Male (${males}) + Female (${females}) sum (${males + females}) exceeds Approx Workers (${totalWorkers}).`;
-      }
-
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next.approxWorkersCount;
-        return { ...next, ...errs };
-      });
-
-      return Object.keys(errs).length === 0;
-    }
-
-    if (sec === 'C') {
-      const errs: Record<string, string> = {};
-      const validatePhone = (num: string, fieldName: string) => {
-        const clean = num.replace(/[\s\-\+]/g, '');
-        if (clean && clean.length > 0) {
-          if (!/^[6-9]\d{9}$/.test(clean) && !/^91[6-9]\d{9}$/.test(clean)) {
-            errs[fieldName] = 'Enter a valid 10-digit mobile number';
-          }
-        }
-      };
-
-      validatePhone(contactPersonPhone, 'contactPersonPhone');
-      validatePhone(ownerPhone, 'ownerPhone');
-
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next.contactPersonPhone;
-        delete next.ownerPhone;
-        return { ...next, ...errs };
-      });
-
-      return Object.keys(errs).length === 0;
-    }
-
-    return true;
-  };
-
-  // Validate entire form for final save
-  const validateForm = (): { isValid: boolean; errs: Record<string, string> } => {
-    const errs: Record<string, string> = {};
-
-    if (!reportingPerson.trim()) {
-      errs.reportingPerson = 'Reporting Person is required';
-    }
-    if (!dateOfVisit) {
-      errs.dateOfVisit = 'Date of visit is required';
-    }
-    if (!clusterName.trim()) {
-      errs.clusterName = 'Name of Cluster is required';
-    }
-    if (!mandal.trim()) {
-      errs.mandal = !clusterName.trim()
-        ? 'Please select a Cluster first'
-        : 'Mandal is required';
-    }
-
-    // Phone number validations (if entered)
-    const validatePhone = (num: string, fieldName: string) => {
-      const clean = num.replace(/[\s\-\+]/g, '');
-      if (clean && clean.length > 0) {
-        // Indian phone numbers typically 10 digits (or 12 with 91)
-        if (!/^[6-9]\d{9}$/.test(clean) && !/^91[6-9]\d{9}$/.test(clean)) {
-          errs[fieldName] = 'Enter a valid 10-digit mobile number';
-        }
-      }
-    };
-
-    validatePhone(contactPersonPhone, 'contactPersonPhone');
-    validatePhone(ownerPhone, 'ownerPhone');
-
-    // Worker counts logic
-    const totalWorkers = Number(approxWorkersCount) || 0;
-    const males = Number(maleWorkersCount) || 0;
-    const females = Number(femaleWorkersCount) || 0;
-
-    if (males + females > totalWorkers && totalWorkers > 0 && !genderMismatchConfirmed) {
-      setShowGenderMismatchConfirm(true);
-      errs.approxWorkersCount = `Male (${males}) + Female (${females}) sum (${males + females}) exceeds Approx Workers (${totalWorkers}).`;
-    }
-
-    setErrors(errs);
-    return { isValid: Object.keys(errs).length === 0, errs };
-  };
-
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
-    const { isValid, errs } = validateForm();
-    if (!isValid) {
-      // Jump to first section with errors
-      if (errs.reportingPerson || errs.dateOfVisit || errs.clusterName || errs.mandal) {
-        setActiveSection('A');
-      } else if (errs.approxWorkersCount) {
-        setActiveSection('B');
-      } else if (errs.contactPersonPhone || errs.ownerPhone) {
-        setActiveSection('C');
-      }
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+    const { isValid, firstMissing } = validateAndFindMissing();
+    if (!isValid && firstMissing) {
+      scrollToMissingField(firstMissing);
       return;
     }
 
@@ -441,6 +665,8 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
         ownerName: ownerName.trim(),
         ownerPhone: ownerPhone.trim(),
         htblElements,
+        htblFlag: computeHTBLFlag(htblElements),
+        htblYesCount: getHTBLYesCount(htblElements),
         conversationHighlights: conversationHighlights.trim(),
         observations: observations.trim(),
         challengesFaced: challengesFaced.trim(),
@@ -480,7 +706,11 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
         setGenderMismatchConfirmed(false);
         setActiveSection('A');
       }
+      setIsGlidingUp(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => {
+        setIsGlidingUp(false);
+      }, 2400);
 
       // Clear alert after 4.5 seconds
       setTimeout(() => {
@@ -491,30 +721,37 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
     }
   };
 
-  // Handler for Save button: advances to next section until Section E, where it triggers Final Save
+  // Handler for Save button: validates required fields, stops if missing & smooth-scrolls to first missing field; if valid advances or submits
   const handleSaveClick = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
-    // If on the final section 'E', trigger Final Save
+    // 1. Validate all required fields
+    const { isValid, errs, firstMissing } = validateAndFindMissing();
+
+    if (!isValid && firstMissing) {
+      setErrors(errs);
+      scrollToMissingField(firstMissing);
+      return;
+    }
+
+    // 2. If on the final section 'E', trigger Final Save
     if (activeSection === 'E') {
       await handleSubmit();
       return;
     }
 
-    // Validate current section before moving forward
-    const isValid = validateSection(activeSection);
-    if (!isValid) {
-      return;
-    }
-
-    // Automatically advance to the next section
+    // 3. Automatically advance to the next section with smooth glide
     const idx = FORM_SECTIONS.findIndex((s) => s.id === activeSection);
     if (idx < FORM_SECTIONS.length - 1) {
       const nextSec = FORM_SECTIONS[idx + 1].id as 'A' | 'B' | 'C' | 'D' | 'E';
       const nextTitle = FORM_SECTIONS[idx + 1].title;
       setActiveSection(nextSec);
       setSectionTransitionNote(`✓ Section ${activeSection} saved. Proceeding to ${nextTitle}.`);
+      setIsGlidingUp(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => {
+        setIsGlidingUp(false);
+      }, 1800);
       setTimeout(() => {
         setSectionTransitionNote(null);
       }, 3500);
@@ -536,6 +773,23 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       
+      {/* Gliding Up Smooth Feedback Banner */}
+      {isGlidingUp && (
+        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-50 glide-up-banner bg-emerald-800 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-emerald-400">
+          <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center arrow-float-up shrink-0">
+            <ArrowUp className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-white tracking-wide">
+              {activeSection === 'E' ? 'Saving Record & Gliding Up' : 'Advancing Section & Gliding Up'}
+            </p>
+            <p className="text-[10px] text-emerald-200">
+              {activeSection === 'E' ? 'Updating Cloud Firestore & Master Excel...' : 'Smoothly transitioning...'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header bar */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -562,6 +816,15 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <button
+            type="button"
+            onClick={handleResetForm}
+            className="flex-1 sm:flex-initial min-h-[44px] px-3.5 py-2 text-xs font-semibold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors flex items-center justify-center gap-1.5"
+            title="Reset and clear all inputs in this form"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+            <span>Clear Form</span>
+          </button>
           {onCancel && (
             <button
               type="button"
@@ -998,7 +1261,7 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
 
               {/* Village (Area / Village / Ward - Under Mandal) */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                <label htmlFor="field-areaVillageWard" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Village (Area / Village / Ward) <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -1006,9 +1269,21 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
                   type="text"
                   placeholder="e.g. Raghavapur Village"
                   value={areaVillageWard}
-                  onChange={(e) => setAreaVillageWard(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  onChange={(e) => {
+                    setAreaVillageWard(e.target.value);
+                    clearError('areaVillageWard');
+                  }}
+                  aria-invalid={errors.areaVillageWard ? 'true' : 'false'}
+                  aria-describedby={errors.areaVillageWard ? 'err-areaVillageWard' : undefined}
+                  className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                    errors.areaVillageWard ? 'border-rose-400 bg-rose-50/30 required-error' : 'border-slate-300'
+                  }`}
                 />
+                {errors.areaVillageWard && (
+                  <p id="err-areaVillageWard" role="alert" className="text-xs text-rose-600 mt-1 error-message font-medium">
+                    {errors.areaVillageWard}
+                  </p>
+                )}
               </div>
 
               {/* Revenue Division (Under Village, with dropdown) */}
@@ -1041,9 +1316,14 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
                       }
                     } else {
                       setRevenueDivision(val);
+                      clearError('revenueDivision');
                     }
                   }}
-                  className="w-full px-3.5 py-2.5 min-h-[44px] text-sm rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  aria-invalid={errors.revenueDivision ? 'true' : 'false'}
+                  aria-describedby={errors.revenueDivision ? 'err-revenueDivision' : undefined}
+                  className={`w-full px-3.5 py-2.5 min-h-[44px] text-sm rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                    errors.revenueDivision ? 'border-rose-400 bg-rose-50/30 required-error' : 'border-slate-300'
+                  }`}
                 >
                   <option value="">-- Select Revenue Division ({REVENUE_DIVISION_OPTIONS.length} options) --</option>
                   {REVENUE_DIVISION_OPTIONS.map((rd) => (
@@ -1055,27 +1335,42 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
                 </select>
 
                 {/* Custom input if not in standard list */}
-                {!((REVENUE_DIVISION_OPTIONS as readonly string[]).includes(revenueDivision)) && (
+                {!((REVENUE_DIVISION_OPTIONS as readonly string[]).includes(revenueDivision)) && revenueDivision !== '' && (
                   <input
                     id="field-revenueDivision-custom"
                     type="text"
                     placeholder="Enter custom revenue division"
                     value={revenueDivision}
-                    onChange={(e) => setRevenueDivision(e.target.value)}
+                    onChange={(e) => {
+                      setRevenueDivision(e.target.value);
+                      clearError('revenueDivision');
+                    }}
                     className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
                 )}
+                {errors.revenueDivision && (
+                  <p id="err-revenueDivision" role="alert" className="text-xs text-rose-600 mt-1 error-message font-medium">
+                    {errors.revenueDivision}
+                  </p>
+                )}
               </div>
 
-              {/* Police Station */}
+              {/* Police Station (District-wise) */}
               <div className="space-y-1.5">
-                <label htmlFor="field-policeStation" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Police Station <span className="text-rose-500">*</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="field-policeStation" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Police Station <span className="text-rose-500">*</span>
+                  </label>
+                  {clusterName && availablePoliceStations.length > 0 && (
+                    <span className="text-[11px] text-emerald-700 font-medium">
+                      {availablePoliceStations.length} {clusterName} Stations
+                    </span>
+                  )}
+                </div>
                 <select
                   id="field-policeStation"
                   value={
-                    (POLICE_STATION_OPTIONS as readonly string[]).includes(policeStation)
+                    (availablePoliceStations.length > 0 ? availablePoliceStations : POLICE_STATION_OPTIONS).includes(policeStation as any)
                       ? policeStation
                       : policeStation
                       ? '__custom__'
@@ -1089,35 +1384,66 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
                       }
                     } else {
                       setPoliceStation(val);
+                      clearError('policeStation');
                     }
                   }}
-                  className="w-full px-3.5 py-2.5 min-h-[44px] text-sm rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  aria-invalid={errors.policeStation ? 'true' : 'false'}
+                  aria-describedby={errors.policeStation ? 'err-policeStation' : undefined}
+                  className={`w-full px-3.5 py-2.5 min-h-[44px] text-sm rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                    errors.policeStation ? 'border-rose-400 bg-rose-50/30 required-error' : 'border-slate-300'
+                  }`}
                 >
-                  <option value="">-- Select Police Station --</option>
-                  {POLICE_STATION_OPTIONS.map((ps) => (
-                    <option key={ps} value={ps}>
-                      {ps}
-                    </option>
-                  ))}
-                  <option value="__custom__">Other (Enter custom police station...)</option>
+                  {clusterName && availablePoliceStations.length > 0 ? (
+                    <>
+                      <option value="">-- Select Police Station ({clusterName} - {availablePoliceStations.length} options) --</option>
+                      {availablePoliceStations.map((ps) => (
+                        <option key={ps} value={ps}>
+                          {ps}
+                        </option>
+                      ))}
+                      <option value="__custom__">Other (Enter custom police station...)</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="">-- Select Police Station --</option>
+                      {CLUSTER_OPTIONS.map((dist) => (
+                        <optgroup key={dist} label={`${dist} District Police Stations`}>
+                          {DISTRICT_POLICE_STATION_MAP[dist].map((ps) => (
+                            <option key={ps} value={ps}>
+                              {ps}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                      <option value="__custom__">Other (Enter custom police station...)</option>
+                    </>
+                  )}
                 </select>
 
-                {!((POLICE_STATION_OPTIONS as readonly string[]).includes(policeStation)) && (
+                {!((POLICE_STATION_OPTIONS as readonly string[]).includes(policeStation)) && policeStation !== '' && (
                   <input
                     id="field-policeStation-custom"
                     type="text"
                     placeholder="Enter custom police station name"
                     value={policeStation}
-                    onChange={(e) => setPoliceStation(e.target.value)}
+                    onChange={(e) => {
+                      setPoliceStation(e.target.value);
+                      clearError('policeStation');
+                    }}
                     className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   />
+                )}
+                {errors.policeStation && (
+                  <p id="err-policeStation" role="alert" className="text-xs text-rose-600 mt-1 error-message font-medium">
+                    {errors.policeStation}
+                  </p>
                 )}
               </div>
 
               {/* Location of Worksite / Industry (Under Revenue Division) */}
               <div className="sm:col-span-2">
                 <label htmlFor="field-locationLink" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Location of Worksite / Industry (Google Maps Link or GPS Coords) <span className="text-rose-500">*</span>
+                  Location of Worksite / Industry (Google Maps Link or GPS Coords)
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -1125,8 +1451,15 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
                     type="text"
                     placeholder="https://maps.google.com/?q=18.6166,79.3833 or GPS / Landmark"
                     value={locationLink}
-                    onChange={(e) => setLocationLink(e.target.value)}
-                    className="flex-1 px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    onChange={(e) => {
+                      setLocationLink(e.target.value);
+                      clearError('locationLink');
+                    }}
+                    aria-invalid={errors.locationLink ? 'true' : 'false'}
+                    aria-describedby={errors.locationLink ? 'err-locationLink' : undefined}
+                    className={`flex-1 px-3.5 py-2.5 text-sm rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                      errors.locationLink ? 'border-rose-400 bg-rose-50/30 required-error' : 'border-slate-300'
+                    }`}
                   />
                   {locationLink && (
                     <a
@@ -1141,28 +1474,74 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
                     </a>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Paste any Google Maps URL, pin link, or GPS coordinates/landmark of the worksite.
-                </p>
+                {errors.locationLink ? (
+                  <p id="err-locationLink" role="alert" className="text-xs text-rose-600 mt-1 error-message font-medium">
+                    {errors.locationLink}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Paste any Google Maps URL, pin link, or GPS coordinates/landmark of the worksite.
+                  </p>
+                )}
               </div>
 
               {/* Type of Industry/Worksite */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                <label htmlFor="field-industryType" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Type of Industry/Worksite <span className="text-rose-500">*</span>
                 </label>
                 <select
                   id="field-industryType"
                   value={industryType}
-                  onChange={(e) => setIndustryType(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  onChange={(e) => {
+                    setIndustryType(e.target.value);
+                    clearError('industryType');
+                  }}
+                  aria-invalid={errors.industryType ? 'true' : 'false'}
+                  aria-describedby={errors.industryType ? 'err-industryType' : undefined}
+                  className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                    errors.industryType ? 'border-rose-400 bg-rose-50/30 required-error' : 'border-slate-300'
+                  }`}
                 >
+                  <option value="">-- Select Industry Type --</option>
                   {INDUSTRY_OPTIONS.map((opt) => (
                     <option key={opt} value={opt}>
                       {opt}
                     </option>
                   ))}
                 </select>
+                {errors.industryType && (
+                  <p id="err-industryType" role="alert" className="text-xs text-rose-600 mt-1 error-message font-medium">
+                    {errors.industryType}
+                  </p>
+                )}
+              </div>
+
+              {/* Name of the Industry / Worksite */}
+              <div>
+                <label htmlFor="field-industryName" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Name of the Industry / Worksite <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  id="field-industryName"
+                  type="text"
+                  placeholder="e.g. SLV Brick Industry, Sri Laxmi Rice Mill"
+                  value={industryName}
+                  onChange={(e) => {
+                    setIndustryName(e.target.value);
+                    clearError('industryName');
+                  }}
+                  aria-invalid={errors.industryName ? 'true' : 'false'}
+                  aria-describedby={errors.industryName ? 'err-industryName' : undefined}
+                  className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                    errors.industryName ? 'border-rose-400 bg-rose-50/30 required-error' : 'border-slate-300'
+                  }`}
+                />
+                {errors.industryName && (
+                  <p id="err-industryName" role="alert" className="text-xs text-rose-600 mt-1 error-message font-medium">
+                    {errors.industryName}
+                  </p>
+                )}
               </div>
 
               {/* Worksite/Industry Season */}
@@ -1173,8 +1552,15 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
                 <select
                   id="field-seasonality"
                   value={seasonality}
-                  onChange={(e) => setSeasonality(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  onChange={(e) => {
+                    setSeasonality(e.target.value);
+                    clearError('seasonality');
+                  }}
+                  aria-invalid={errors.seasonality ? 'true' : 'false'}
+                  aria-describedby={errors.seasonality ? 'err-seasonality' : undefined}
+                  className={`w-full px-3.5 py-2.5 text-sm rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 ${
+                    errors.seasonality ? 'border-rose-400 bg-rose-50/30 required-error' : 'border-slate-300'
+                  }`}
                 >
                   <option value="">-- Select Season --</option>
                   {SEASON_OPTIONS.map((season) => (
@@ -1183,6 +1569,11 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
                     </option>
                   ))}
                 </select>
+                {errors.seasonality && (
+                  <p id="err-seasonality" role="alert" className="text-xs text-rose-600 mt-1 error-message font-medium">
+                    {errors.seasonality}
+                  </p>
+                )}
               </div>
 
             </div>
@@ -1464,235 +1855,415 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
         )}
 
         {/* SECTION D: HT&BL ELEMENTS */}
-        {activeSection === 'D' && (
-          <div className="space-y-6">
-            <div className="border-b border-slate-200 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 text-xs flex items-center justify-center font-bold">
-                    D
+        {activeSection === 'D' && (() => {
+          const yesCount = getHTBLYesCount(htblElements);
+          const currentFlag = computeHTBLFlag(htblElements);
+
+          return (
+            <div className="space-y-6">
+              <div className="border-b border-slate-200 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 text-xs flex items-center justify-center font-bold">
+                      D
+                    </span>
+                    SECTION D – HT&BL ELEMENTS
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Statutory Bonded Labour &amp; Human Trafficking indicators with Victim Support (Yes/No Indicators).
+                  </p>
+                </div>
+
+                {/* Master "No Elements" Toggle Button */}
+                <button
+                  type="button"
+                  id="toggle-master-no-elements"
+                  onClick={() => toggleNoElements(!htblElements.noElements)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
+                    htblElements.noElements
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                      : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                    htblElements.noElements ? 'bg-white text-emerald-700' : 'border-slate-400'
+                  }`}>
+                    {htblElements.noElements && <Check className="w-2.5 h-2.5" />}
                   </span>
-                  SECTION D – HT&BL ELEMENTS
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Statutory Bonded Labour System (Abolition) & Human Trafficking indicators. Use simple Yes/No toggles.
-                </p>
+                  No Elements Identified
+                </button>
               </div>
 
-              {/* Master "No Elements" Toggle Button */}
-              <button
-                type="button"
-                id="toggle-master-no-elements"
-                onClick={() => toggleNoElements(!htblElements.noElements)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
-                  htblElements.noElements
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                    : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'
+              {/* Statutory Flagging Status Banner */}
+              <div
+                className={`rounded-xl p-4 border transition-all ${
+                  currentFlag === 'Pipeline'
+                    ? 'bg-rose-50 border-rose-300 text-rose-950'
+                    : currentFlag === 'Potential'
+                    ? 'bg-amber-50 border-amber-300 text-amber-950'
+                    : currentFlag === 'Identification'
+                    ? 'bg-blue-50 border-blue-300 text-blue-950'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-950'
                 }`}
               >
-                <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                  htblElements.noElements ? 'bg-white text-emerald-700' : 'border-slate-400'
-                }`}>
-                  {htblElements.noElements && <Check className="w-2.5 h-2.5" />}
-                </span>
-                No Elements Identified
-              </button>
-            </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start sm:items-center gap-3">
+                    {currentFlag === 'Pipeline' ? (
+                      <AlertCircle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
+                    ) : currentFlag === 'Potential' ? (
+                      <AlertCircle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+                    ) : currentFlag === 'Identification' ? (
+                      <ShieldAlert className="w-6 h-6 text-blue-600 shrink-0 mt-0.5 sm:mt-0" />
+                    ) : (
+                      <CheckCircle className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-sm">
+                          {currentFlag === 'Pipeline' && 'PIPELINE Case Flagged'}
+                          {currentFlag === 'Potential' && 'Potential HT&BL Case Flagged'}
+                          {currentFlag === 'Identification' && 'Identification Stage Flagged'}
+                          {currentFlag === 'None' && 'Standard Inspection (No Elements)'}
+                        </span>
+                        <span
+                          className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full ${
+                            currentFlag === 'Pipeline'
+                              ? 'bg-rose-200 text-rose-900 border border-rose-300'
+                              : currentFlag === 'Potential'
+                              ? 'bg-amber-200 text-amber-900 border border-amber-300'
+                              : currentFlag === 'Identification'
+                              ? 'bg-blue-200 text-blue-900 border border-blue-300'
+                              : 'bg-emerald-200 text-emerald-900 border border-emerald-300'
+                          }`}
+                        >
+                          {yesCount} {yesCount === 1 ? 'Yes Selected' : 'Yes Selected'}
+                          {htblElements.victimSupport?.present && ' • Victim Support: Yes'}
+                        </span>
+                      </div>
+                      <p className="text-xs opacity-90 mt-0.5">
+                        {currentFlag === 'Pipeline' &&
+                          '4 or more Yes indicators identified. Automatically classified into PIPELINE Cases for evidence gathering.'}
+                        {currentFlag === 'Potential' &&
+                          (htblElements.victimSupport?.present
+                            ? 'Victim Support active (Yes). Flagged as a Potential Case for verification and protective intervention.'
+                            : 'Potential case statutory criteria met for verification.')}
+                        {currentFlag === 'Identification' &&
+                          '3 Yes indicators identified. Flagged for initial Identification screening.'}
+                        {currentFlag === 'None' &&
+                          'Zero exploitative elements selected. Categorized as routine monitoring.'}
+                      </p>
+                    </div>
+                  </div>
 
-            {/* Warning or Status Header */}
-            {computeIsHtblPotential(htblElements) ? (
-              <div className="bg-rose-50 border border-rose-300 rounded-xl p-3.5 text-xs text-rose-900 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-                <div>
-                  <span className="font-bold">Potential HT&BL Case Flagged: </span>
-                  One or more indicators are active. This visit will be categorized as requiring follow-up/verification.
+                  {/* Flag Criteria Guide Chips */}
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 shrink-0 text-[10px] font-semibold">
+                    <span
+                      className={`px-2 py-1 rounded-md border ${
+                        currentFlag === 'Identification'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs font-bold'
+                          : 'bg-white/70 text-slate-700 border-slate-300'
+                      }`}
+                    >
+                      3 Yes: Identification
+                    </span>
+                    <span
+                      className={`px-2 py-1 rounded-md border ${
+                        currentFlag === 'Potential'
+                          ? 'bg-amber-600 text-white border-amber-600 shadow-2xs font-bold'
+                          : 'bg-white/70 text-slate-700 border-slate-300'
+                      }`}
+                    >
+                      Victim Support (Yes): Potential
+                    </span>
+                    <span
+                      className={`px-2 py-1 rounded-md border ${
+                        currentFlag === 'Pipeline'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-2xs font-bold'
+                          : 'bg-white/70 text-slate-700 border-slate-300'
+                      }`}
+                    >
+                      4+ Yes: Pipeline
+                    </span>
+                  </div>
                 </div>
               </div>
-            ) : htblElements.noElements ? (
-              <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3 text-xs text-emerald-800 flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Standard worksite inspection: No exploitative elements identified.</span>
+
+              {/* Debt / Financial Obligation Notes (Optional text, no Yes/No choice) */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <label htmlFor="field-debtObligation-details" className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                    <span>Debt / Obligation Remarks</span>
+                    <span className="text-[10px] font-semibold text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded-md">
+                      Evidence &amp; Notes Only (No Yes/No Toggle)
+                    </span>
+                  </label>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Record qualitative debt details, loan terms, or informal creditor notes if observed. Statutory flags are determined by the indicators below.
+                </p>
+                <input
+                  id="field-debtObligation-details"
+                  type="text"
+                  placeholder="e.g. Worker owes local money lender / middleman; wage deductions observed..."
+                  value={htblElements.debtObligation?.details || ''}
+                  onChange={(e) => updateHtblDetails('debtObligation', 'details', e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
               </div>
-            ) : null}
 
-            {/* List of 12 Elements */}
-            <div className="space-y-3">
-              {[
-                {
-                  key: 'debtObligation' as const,
-                  label: 'Debt / Obligation',
-                  description: 'Workers tied by debt, loan, or financial obligation to employer/intermediary',
-                },
-                {
-                  key: 'advance' as const,
-                  label: 'Advance',
-                  description: 'Upfront advance paid to worker or family in native village prior to recruitment',
-                  isAdvance: true,
-                },
-                {
-                  key: 'customSocialObligation' as const,
-                  label: 'Custom / Social Obligation',
-                  description: 'Obligation stemming from local customary practices, marriage, or social customs',
-                },
-                {
-                  key: 'succession' as const,
-                  label: 'Succession',
-                  description: 'Labour obligations passed down from parent/ancestor or hereditary bondage',
-                },
-                {
-                  key: 'economicConsideration' as const,
-                  label: 'Economic Consideration',
-                  description: 'Deprivation driven by extreme distress, land loss, crop failure, or food insecurity',
-                },
-                {
-                  key: 'casteOrCommunity' as const,
-                  label: 'Caste or Community',
-                  description: 'Marginalized social groups (SC, ST, vulnerable communities) targeted for exploitation',
-                },
-                {
-                  key: 'suretyOrContract' as const,
-                  label: 'Surety / Contract',
-                  description: 'Verbal contracts, retained identity documents, third-party guarantors, or sirdars',
-                },
-                {
-                  key: 'interState' as const,
-                  label: 'Inter-State',
-                  description: 'Trans-border transportation of workers without registration under ISMW Act',
-                },
-                {
-                  key: 'rightToMinimumWage' as const,
-                  label: 'Right to Minimum Wage (Deprivation)',
-                  description: 'Payment below statutory notified minimum wage or unlawful wage deductions',
-                },
-                {
-                  key: 'freedomOfEmployment' as const,
-                  label: 'Freedom of Employment (Restricted)',
-                  description: 'Worker is prevented from seeking alternative jobs or leaving current worksite',
-                },
-                {
-                  key: 'rightToMoveFreely' as const,
-                  label: 'Right to Move Freely (Movement Restricted)',
-                  description: 'Physical confinement, gatekeeper surveillance, or restricted exit to markets',
-                },
-                {
-                  key: 'rightToAppropriateSellAtMarket' as const,
-                  label: 'Right to Appropriate / Sell at Market',
-                  description: 'Worker prohibited from marketing personal produce or services at market price',
-                },
-              ].map((item) => {
-                const isChecked = htblElements[item.key].present;
-                return (
-                  <div
-                    key={item.key}
-                    className={`border rounded-xl p-3.5 transition-colors ${
-                      isChecked
-                        ? 'bg-rose-50/40 border-rose-200'
-                        : 'bg-white border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs sm:text-sm text-slate-800">
-                            {item.label}
-                          </span>
-                          {isChecked && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">
-                              Present (Yes)
+              {/* List of 11 Statutory Yes/No Indicators */}
+              <div className="space-y-3">
+                {[
+                  {
+                    key: 'advance' as const,
+                    label: 'Advance (Amount & Details)',
+                    description: 'Upfront advance paid to worker or family in native village prior to recruitment',
+                    isAdvance: true,
+                  },
+                  {
+                    key: 'customSocialObligation' as const,
+                    label: 'Custom / Social Obligation',
+                    description: 'Obligation stemming from local customary practices, marriage, or social customs',
+                  },
+                  {
+                    key: 'succession' as const,
+                    label: 'Succession',
+                    description: 'Labour obligations passed down from parent/ancestor or hereditary bondage',
+                  },
+                  {
+                    key: 'economicConsideration' as const,
+                    label: 'Economic Consideration',
+                    description: 'Deprivation driven by extreme distress, land loss, crop failure, or food insecurity',
+                  },
+                  {
+                    key: 'casteOrCommunity' as const,
+                    label: 'Caste or Community',
+                    description: 'Marginalized social groups (SC, ST, vulnerable communities) targeted for exploitation',
+                  },
+                  {
+                    key: 'suretyOrContract' as const,
+                    label: 'Surety / Contract',
+                    description: 'Verbal contracts, retained identity documents, third-party guarantors, or sirdars',
+                  },
+                  {
+                    key: 'interState' as const,
+                    label: 'Inter-State',
+                    description: 'Trans-border transportation of workers without registration under ISMW Act',
+                  },
+                  {
+                    key: 'rightToMinimumWage' as const,
+                    label: 'Right to Minimum Wage (Deprivation)',
+                    description: 'Payment below statutory notified minimum wage or unlawful wage deductions',
+                  },
+                  {
+                    key: 'freedomOfEmployment' as const,
+                    label: 'Freedom of Employment (Restricted)',
+                    description: 'Worker is prevented from seeking alternative jobs or leaving current worksite',
+                  },
+                  {
+                    key: 'rightToMoveFreely' as const,
+                    label: 'Right to Move Freely (Movement Restricted)',
+                    description: 'Physical confinement, gatekeeper surveillance, or restricted exit to markets',
+                  },
+                  {
+                    key: 'rightToAppropriateSellAtMarket' as const,
+                    label: 'Right to Appropriate / Sell at Market',
+                    description: 'Worker prohibited from marketing personal produce or services at market price',
+                  },
+                ].map((item) => {
+                  const isChecked = Boolean(htblElements[item.key]?.present);
+                  return (
+                    <div
+                      key={item.key}
+                      className={`border rounded-xl p-3.5 transition-colors ${
+                        isChecked
+                          ? 'bg-rose-50/40 border-rose-200'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs sm:text-sm text-slate-800">
+                              {item.label}
                             </span>
-                          )}
+                            {isChecked && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                                Present (Yes)
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5">{item.description}</p>
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{item.description}</p>
+
+                        {/* Yes / No Toggle Pills */}
+                        <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+                          <button
+                            type="button"
+                            id={`toggle-${item.key}-yes`}
+                            onClick={() => toggleHtblElement(item.key, true)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                              isChecked
+                                ? 'bg-rose-600 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            type="button"
+                            id={`toggle-${item.key}-no`}
+                            onClick={() => toggleHtblElement(item.key, false)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                              !isChecked
+                                ? 'bg-slate-200 text-slate-800'
+                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                            }`}
+                          >
+                            No
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Yes / No Toggle Pills */}
-                      <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
-                        <button
-                          type="button"
-                          id={`toggle-${item.key}-yes`}
-                          onClick={() => toggleHtblElement(item.key, true)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            isChecked
-                              ? 'bg-rose-600 text-white shadow-xs'
-                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                          }`}
-                        >
-                          Yes
-                        </button>
-                        <button
-                          type="button"
-                          id={`toggle-${item.key}-no`}
-                          onClick={() => toggleHtblElement(item.key, false)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                            !isChecked
-                              ? 'bg-slate-200 text-slate-800'
-                              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                          }`}
-                        >
-                          No
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Expandable fields when checked */}
-                    {isChecked && (
-                      <div className="mt-3 pt-3 border-t border-rose-100 space-y-2">
-                        {item.isAdvance && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                Advance Amount (in Rupees)
-                              </label>
-                              <div className="relative">
-                                <span className="absolute left-3 top-2 text-xs font-bold text-slate-500">
-                                  ₹
-                                </span>
+                      {/* Expandable fields when checked */}
+                      {isChecked && (
+                        <div className="mt-3 pt-3 border-t border-rose-100 space-y-2">
+                          {item.isAdvance && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                  Advance Amount (in Rupees)
+                                </label>
+                                <div className="relative">
+                                  <span className="absolute left-3 top-2 text-xs font-bold text-slate-500">
+                                    ₹
+                                  </span>
+                                  <input
+                                    type="number"
+                                    placeholder="e.g. 40000"
+                                    value={htblElements.advance.amount || ''}
+                                    onChange={(e) => updateHtblDetails('advance', 'amount', e.target.value)}
+                                    className="w-full pl-7 pr-3 py-1.5 text-xs rounded-lg border border-rose-300 bg-white focus:outline-none focus:ring-1 focus:ring-rose-500"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
+                                  Advance Conditions / Recipient
+                                </label>
                                 <input
-                                  type="number"
-                                  placeholder="e.g. 40000"
-                                  value={htblElements.advance.amount || ''}
-                                  onChange={(e) => updateHtblDetails('advance', 'amount', e.target.value)}
-                                  className="w-full pl-7 pr-3 py-1.5 text-xs rounded-lg border border-rose-300 bg-white focus:outline-none focus:ring-1 focus:ring-rose-500"
+                                  type="text"
+                                  placeholder="e.g. Paid to parents in home village via broker"
+                                  value={htblElements.advance.details || ''}
+                                  onChange={(e) => updateHtblDetails('advance', 'details', e.target.value)}
+                                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-rose-300 bg-white focus:outline-none focus:ring-1 focus:ring-rose-500"
                                 />
                               </div>
                             </div>
+                          )}
+
+                          {!item.isAdvance && (
                             <div>
                               <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                                Advance Conditions / Recipient
+                                Remarks / Specific Evidence Observed
                               </label>
                               <input
                                 type="text"
-                                placeholder="e.g. Paid to parents in home village via broker"
-                                value={htblElements.advance.details || ''}
-                                onChange={(e) => updateHtblDetails('advance', 'details', e.target.value)}
+                                placeholder={`Details about ${item.label.toLowerCase()}...`}
+                                value={htblElements[item.key].details || ''}
+                                onChange={(e) => updateHtblDetails(item.key, 'details', e.target.value)}
                                 className="w-full px-3 py-1.5 text-xs rounded-lg border border-rose-300 bg-white focus:outline-none focus:ring-1 focus:ring-rose-500"
                               />
                             </div>
-                          </div>
-                        )}
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
 
-                        {!item.isAdvance && (
-                          <div>
-                            <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">
-                              Remarks / Specific Evidence Observed
-                            </label>
-                            <input
-                              type="text"
-                              placeholder={`Details about ${item.label.toLowerCase()}...`}
-                              value={htblElements[item.key].details || ''}
-                              onChange={(e) => updateHtblDetails(item.key, 'details', e.target.value)}
-                              className="w-full px-3 py-1.5 text-xs rounded-lg border border-rose-300 bg-white focus:outline-none focus:ring-1 focus:ring-rose-500"
-                            />
-                          </div>
+                {/* Victim Support - Critical Statutory Indicator (Placed directly below Right to Appropriate) */}
+                <div
+                  id="field-victimSupport"
+                  className={`border rounded-xl p-3.5 transition-all scroll-margin-field ${
+                    htblElements.victimSupport?.present
+                      ? 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-400/50'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-xs sm:text-sm text-slate-800">
+                          Victim Support <span className="text-rose-500">*</span>
+                        </span>
+                        {htblElements.victimSupport?.present ? (
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            Yes (Potential Case Flagged)
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                            No
+                          </span>
                         )}
                       </div>
-                    )}
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Immediate emergency assistance, protection, shelter, medical aid, or legal support needed for victim/family. If Yes, automatically flags this visit as a <strong>Potential HT&amp;BL Case</strong>.
+                      </p>
+                    </div>
+
+                    {/* Yes / No Toggle Pills */}
+                    <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+                      <button
+                        type="button"
+                        id="toggle-victimSupport-yes"
+                        onClick={() => toggleHtblElement('victimSupport', true)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                          htblElements.victimSupport?.present
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Yes
+                      </button>
+                      <button
+                        type="button"
+                        id="toggle-victimSupport-no"
+                        onClick={() => toggleHtblElement('victimSupport', false)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          !htblElements.victimSupport?.present
+                            ? 'bg-slate-200 text-slate-800'
+                            : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                      >
+                        No
+                      </button>
+                    </div>
                   </div>
-                );
-              })}
+
+                  {/* Expandable fields when Yes */}
+                  {htblElements.victimSupport?.present && (
+                    <div className="mt-3 pt-3 border-t border-amber-200 space-y-1.5 animate-fadeIn">
+                      <label htmlFor="field-victimSupport-details" className="block text-[11px] font-semibold text-amber-950 mb-0.5">
+                        Victim Support Details / Immediate Protective Measures Provided
+                      </label>
+                      <input
+                        id="field-victimSupport-details"
+                        type="text"
+                        placeholder="e.g. Legal aid requested from DLSA; safe temporary shelter arranged; medical screening completed"
+                        value={htblElements.victimSupport.details || ''}
+                        onChange={(e) => updateHtblDetails('victimSupport', 'details', e.target.value)}
+                        className="w-full px-3 py-1.5 text-xs rounded-lg border border-amber-300 bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* SECTION E: FIELD VISIT INFORMATION */}
         {activeSection === 'E' && (
@@ -1825,6 +2396,12 @@ export const VisitFormView: React.FC<VisitFormViewProps> = ({
           </div>
 
           <div className="flex flex-col sm:flex-row items-center sm:items-center gap-2.5 w-full sm:w-auto justify-end">
+            {Object.keys(errors).length > 0 && (
+              <span className="text-[11px] text-rose-700 font-semibold inline-flex items-center gap-1.5 bg-rose-50 border border-rose-200 px-3 py-1 rounded-lg animate-fadeIn">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                Please complete required fields ({Object.keys(errors).length} missing)
+              </span>
+            )}
             <span className="text-[11px] text-emerald-800 font-medium inline-flex items-center gap-1.5 text-center sm:text-left">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
               <span>

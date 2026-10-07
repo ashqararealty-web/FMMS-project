@@ -16,6 +16,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { exportToExcel } from '../services/excelService';
+import { computeHTBLFlag, getHTBLYesCount } from '../services/storage';
 
 interface RecordDetailModalProps {
   record: VisitRecord;
@@ -29,9 +30,10 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
   onEdit,
 }) => {
   const h = record.htblElements;
+  const flag = record.htblFlag || computeHTBLFlag(h);
+  const yesCount = record.htblYesCount !== undefined ? record.htblYesCount : getHTBLYesCount(h);
 
   const htblList = [
-    { label: 'Debt / Obligation', data: h?.debtObligation },
     { label: 'Advance', data: h?.advance, isAdvance: true },
     { label: 'Custom / Social Obligation', data: h?.customSocialObligation },
     { label: 'Succession', data: h?.succession },
@@ -43,6 +45,7 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
     { label: 'Freedom of Employment (Restricted)', data: h?.freedomOfEmployment },
     { label: 'Right to Move Freely (Restricted)', data: h?.rightToMoveFreely },
     { label: 'Right to Appropriate / Sell at Market', data: h?.rightToAppropriateSellAtMarket },
+    { label: 'Victim Support (Immediate Aid/Protection)', data: h?.victimSupport },
   ];
 
   return (
@@ -91,23 +94,45 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
         <div className="p-3.5 sm:p-6 overflow-y-auto space-y-5 sm:space-y-6 text-xs text-slate-700">
           
           {/* Status Banner */}
-          <div className={`p-4 rounded-xl border flex items-center justify-between gap-3 ${
-            record.isHtblPotential
-              ? 'bg-rose-50 border-rose-200 text-rose-900'
-              : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+          <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+            flag === 'Pipeline'
+              ? 'bg-rose-50 border-rose-300 text-rose-950'
+              : flag === 'Potential'
+              ? 'bg-amber-50 border-amber-300 text-amber-950'
+              : flag === 'Identification'
+              ? 'bg-blue-50 border-blue-300 text-blue-950'
+              : 'bg-emerald-50 border-emerald-300 text-emerald-950'
           }`}>
             <div className="flex items-center gap-3">
-              {record.isHtblPotential ? (
+              {flag === 'Pipeline' ? (
                 <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0" />
+              ) : flag === 'Potential' ? (
+                <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0" />
+              ) : flag === 'Identification' ? (
+                <ShieldAlert className="w-6 h-6 text-blue-600 shrink-0" />
               ) : (
                 <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0" />
               )}
               <div>
-                <p className="font-bold text-sm">
-                  {record.isHtblPotential
-                    ? 'HT&BL Potential Case Flagged'
-                    : 'No HT&BL Elements Identified'}
-                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-bold text-sm">
+                    {flag === 'Pipeline' && 'PIPELINE Case Flagged'}
+                    {flag === 'Potential' && 'HT&BL Potential Case Flagged'}
+                    {flag === 'Identification' && 'Identification Stage Flagged'}
+                    {flag === 'None' && 'No HT&BL Elements Identified'}
+                  </p>
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                    flag === 'Pipeline'
+                      ? 'bg-rose-200 text-rose-900'
+                      : flag === 'Potential'
+                      ? 'bg-amber-200 text-amber-900'
+                      : flag === 'Identification'
+                      ? 'bg-blue-200 text-blue-900'
+                      : 'bg-emerald-200 text-emerald-900'
+                  }`}>
+                    {yesCount} Yes Indicators {Boolean(h?.victimSupport?.present) ? '• Victim Support Yes' : ''} (3=ID, Victim=Potential, 4+=Pipeline)
+                  </span>
+                </div>
                 <p className="text-[11px] opacity-80 mt-0.5">
                   Case Status: <strong>{record.caseStatus}</strong>
                 </p>
@@ -229,10 +254,28 @@ export const RecordDetailModal: React.FC<RecordDetailModalProps> = ({
 
           {/* Section D: HT&BL Elements */}
           <div className="space-y-3">
-            <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 border-b border-slate-100 pb-1.5">
-              <ShieldAlert className="w-4 h-4 text-emerald-600" />
-              Section D: 12 HT&BL Statutory Indicators
-            </h3>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-emerald-600" />
+                Section D: 11 Statutory Yes/No Indicators
+              </h3>
+              <span className="text-[10px] text-slate-500 font-medium">
+                Rule: 3 Yes = Identification • Victim Support (Yes) = Potential • 4+ Yes = Pipeline
+              </span>
+            </div>
+
+            {/* Debt / Financial Obligation Remarks (No Yes/No) */}
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs">
+              <div className="flex items-center justify-between font-semibold text-slate-700">
+                <span>Debt / Obligation Remarks</span>
+                <span className="text-[10px] font-semibold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded">
+                  Notes (No Yes/No Toggle)
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 mt-1">
+                {h?.debtObligation?.details || 'No debt observations recorded.'}
+              </p>
+            </div>
             
             {h?.noElements ? (
               <p className="text-xs text-emerald-700 bg-emerald-50 p-3 rounded-lg border border-emerald-200">

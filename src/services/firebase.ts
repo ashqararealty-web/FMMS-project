@@ -25,6 +25,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { VisitRecord, UserProfile, UserRole } from '../types';
+import { getHTBLYesCount, computeHTBLFlag, initialHTBLElements } from './storage';
 
 // Initialize Firebase App
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -123,24 +124,9 @@ export function formatVisitId(nextNo: number): string {
   return `FV-${nextNo}`;
 }
 
-// Check if HT&BL is potential
+// Check if HT&BL is potential (Flag potential for 3 Yes)
 export function computeIsHtblPotential(htbl: any): boolean {
-  if (!htbl) return false;
-  if (htbl.noElements) return false;
-  return Boolean(
-    htbl.debtObligation?.present ||
-    htbl.advance?.present ||
-    htbl.customSocialObligation?.present ||
-    htbl.succession?.present ||
-    htbl.economicConsideration?.present ||
-    htbl.casteOrCommunity?.present ||
-    htbl.suretyOrContract?.present ||
-    htbl.interState?.present ||
-    htbl.rightToMinimumWage?.present ||
-    htbl.freedomOfEmployment?.present ||
-    htbl.rightToMoveFreely?.present ||
-    htbl.rightToAppropriateSellAtMarket?.present
-  );
+  return computeHTBLFlag(htbl) === 'Potential';
 }
 
 // Real-time listener for visits collection
@@ -157,10 +143,15 @@ export function subscribeToVisits(
       const records: VisitRecord[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
+        const flag = data.htblFlag || computeHTBLFlag(data.htblElements);
+        const yesCount = data.htblYesCount !== undefined ? data.htblYesCount : getHTBLYesCount(data.htblElements);
+        const isPotential = flag === 'Potential' || Boolean(data.htblElements?.victimSupport?.present);
         records.push({
           ...(data as any),
           id: data.id || docSnap.id,
-          isHtblPotential: computeIsHtblPotential(data.htblElements),
+          htblFlag: flag,
+          htblYesCount: yesCount,
+          isHtblPotential: isPotential,
         });
       });
 
@@ -193,7 +184,9 @@ export async function saveVisitToFirestore(
   const now = new Date().toISOString();
   const id = recordData.id || `FV-${Date.now().toString().slice(-4)}`;
 
-  const isHtbl = computeIsHtblPotential(recordData.htblElements);
+  const flag = computeHTBLFlag(recordData.htblElements);
+  const yesCount = getHTBLYesCount(recordData.htblElements);
+  const isHtbl = flag === 'Potential';
 
   const completeRecord: VisitRecord = {
     id,
@@ -229,22 +222,10 @@ export async function saveVisitToFirestore(
     ownerName: recordData.ownerName || '',
     ownerPhone: recordData.ownerPhone || '',
 
-    htblElements: recordData.htblElements || {
-      debtObligation: { present: false },
-      advance: { present: false },
-      customSocialObligation: { present: false },
-      succession: { present: false },
-      economicConsideration: { present: false },
-      casteOrCommunity: { present: false },
-      suretyOrContract: { present: false },
-      interState: { present: false },
-      rightToMinimumWage: { present: false },
-      freedomOfEmployment: { present: false },
-      rightToMoveFreely: { present: false },
-      rightToAppropriateSellAtMarket: { present: false },
-      noElements: true,
-    },
+    htblElements: recordData.htblElements || initialHTBLElements,
     isHtblPotential: isHtbl,
+    htblFlag: flag,
+    htblYesCount: yesCount,
 
     conversationHighlights: recordData.conversationHighlights || '',
     observations: recordData.observations || '',
@@ -360,3 +341,20 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
     return null;
   }
 }
+
+// Clear all visit records from Firestore (used for database reset / clearing test data)
+export async function clearAllVisitsFromFirestore(): Promise<number> {
+  const path = 'visits';
+  try {
+    const snap = await getDocs(collection(db, path));
+    let deleted = 0;
+    for (const docSnap of snap.docs) {
+      await deleteDoc(doc(db, path, docSnap.id));
+      deleted++;
+    }
+    return deleted;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+  }
+}
+

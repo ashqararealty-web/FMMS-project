@@ -20,6 +20,7 @@ import {
   Calendar,
   AlertTriangle,
   ShieldCheck,
+  ShieldAlert,
   MapPin,
   ExternalLink,
   ChevronDown,
@@ -31,6 +32,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
+import { computeHTBLFlag, getHTBLYesCount } from '../services/storage';
 
 interface RecordsListViewProps {
   records: VisitRecord[];
@@ -40,6 +42,7 @@ interface RecordsListViewProps {
   onExportExcel: (subset?: VisitRecord[]) => void;
   onNewVisit: () => void;
   currentUser?: UserProfile | null;
+  onResetAllData?: () => Promise<void> | void;
 }
 
 export const RecordsListView: React.FC<RecordsListViewProps> = ({
@@ -50,7 +53,12 @@ export const RecordsListView: React.FC<RecordsListViewProps> = ({
   onExportExcel,
   onNewVisit,
   currentUser,
+  onResetAllData,
 }) => {
+  // Reset confirmation state
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -59,7 +67,9 @@ export const RecordsListView: React.FC<RecordsListViewProps> = ({
   const [selectedMandal, setSelectedMandal] = useState('');
   const [selectedRevenueDivision, setSelectedRevenueDivision] = useState('');
   const [selectedIndustryType, setSelectedIndustryType] = useState('');
-  const [selectedHtblStatus, setSelectedHtblStatus] = useState<'all' | 'htbl_potential' | 'no_elements'>('all');
+  const [selectedHtblStatus, setSelectedHtblStatus] = useState<
+    'all' | 'htbl_pipeline' | 'htbl_potential' | 'htbl_identification' | 'no_elements'
+  >('all');
   const [selectedCaseStatus, setSelectedCaseStatus] = useState('');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
@@ -155,8 +165,11 @@ export const RecordsListView: React.FC<RecordsListViewProps> = ({
       if (selectedIndustryType && r.industryType !== selectedIndustryType) return false;
 
       // HT&BL status
-      if (selectedHtblStatus === 'htbl_potential' && !r.isHtblPotential) return false;
-      if (selectedHtblStatus === 'no_elements' && r.isHtblPotential) return false;
+      const flag = r.htblFlag || computeHTBLFlag(r.htblElements);
+      if (selectedHtblStatus === 'htbl_potential' && flag !== 'Potential') return false;
+      if (selectedHtblStatus === 'htbl_identification' && flag !== 'Identification') return false;
+      if (selectedHtblStatus === 'htbl_pipeline' && flag !== 'Pipeline') return false;
+      if (selectedHtblStatus === 'no_elements' && flag !== 'None') return false;
 
       // Case status
       if (selectedCaseStatus && r.caseStatus !== selectedCaseStatus) return false;
@@ -257,6 +270,19 @@ export const RecordsListView: React.FC<RecordsListViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {records.length > 0 && onResetAllData && (
+            <button
+              id="records-reset-all-btn"
+              type="button"
+              onClick={() => setShowResetConfirm(true)}
+              className="inline-flex items-center justify-center gap-1.5 min-h-[44px] px-3.5 py-2 text-xs sm:text-sm font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl shadow-2xs transition-colors"
+              title="Reset all test records and typed data"
+            >
+              <Trash2 className="w-4 h-4 text-rose-600" />
+              <span>Reset Test Data</span>
+            </button>
+          )}
+
           <button
             id="records-export-btn"
             onClick={handleExportClick}
@@ -278,6 +304,64 @@ export const RecordsListView: React.FC<RecordsListViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Reset Confirmation Modal */}
+      {showResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Reset All Test Data?</h3>
+                <p className="text-xs text-slate-500">Permanently clear all test entries and names</p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-900 space-y-1.5">
+              <p className="font-semibold">The following will be completely cleared:</p>
+              <ul className="list-disc list-inside space-y-1 text-slate-700">
+                <li>All <strong>{records.length} visit records</strong> in Cloud Firestore</li>
+                <li>All test worksite names, contact persons, and entered details</li>
+                <li>Sequence number will reset to fresh starting sequence (<strong>FV-2315</strong>)</li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(false)}
+                disabled={isResetting}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isResetting}
+                onClick={async () => {
+                  setIsResetting(true);
+                  try {
+                    if (onResetAllData) {
+                      await onResetAllData();
+                    }
+                    setShowResetConfirm(false);
+                  } catch (e) {
+                    console.error('Reset error:', e);
+                  } finally {
+                    setIsResetting(false);
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isResetting ? 'Clearing Records...' : 'Yes, Clear All Data'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Search & Filter Toolbar */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
@@ -451,9 +535,11 @@ export const RecordsListView: React.FC<RecordsListViewProps> = ({
                 onChange={(e) => setSelectedHtblStatus(e.target.value as any)}
                 className="w-full px-3 py-1.5 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
               >
-                <option value="all">All Cases</option>
-                <option value="htbl_potential">Potential HT&BL Cases Only</option>
-                <option value="no_elements">Clean / No Elements Only</option>
+                <option value="all">All Statuses</option>
+                <option value="htbl_pipeline">Pipeline Cases (4+ Yes)</option>
+                <option value="htbl_potential">Potential Cases (Victim Support Yes / Potential)</option>
+                <option value="htbl_identification">Identification (3 Yes)</option>
+                <option value="no_elements">Clean / No Elements (0 Yes)</option>
               </select>
             </div>
 
@@ -615,17 +701,40 @@ export const RecordsListView: React.FC<RecordsListViewProps> = ({
 
                         {/* HT&BL Status */}
                         <td className="py-3 px-3 whitespace-nowrap">
-                          {record.isHtblPotential ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
-                              <AlertTriangle className="w-3 h-3 text-rose-600" />
-                              Potential
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">
-                              <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                              Clean
-                            </span>
-                          )}
+                          {(() => {
+                            const flag = record.htblFlag || computeHTBLFlag(record.htblElements);
+                            const count = record.htblYesCount !== undefined ? record.htblYesCount : getHTBLYesCount(record.htblElements);
+                            if (flag === 'Pipeline') {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                  <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                  Pipeline ({count} Yes)
+                                </span>
+                              );
+                            }
+                            if (flag === 'Potential') {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                  <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                  Potential ({count} Yes)
+                                </span>
+                              );
+                            }
+                            if (flag === 'Identification') {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                  <ShieldAlert className="w-3 h-3 text-blue-600" />
+                                  Identification ({count} Yes)
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                                Clean (0 Yes)
+                              </span>
+                            );
+                          })()}
                         </td>
 
                         {/* Case Status */}
@@ -684,16 +793,39 @@ export const RecordsListView: React.FC<RecordsListViewProps> = ({
                       <p className="text-xs text-slate-500">{record.industryType} • {record.dateOfVisit}</p>
                     </div>
 
-                    {record.isHtblPotential ? (
-                      <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-100 text-rose-800 shrink-0 flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3 text-rose-600" />
-                        Potential
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-100 text-emerald-800 shrink-0">
-                        No Elements
-                      </span>
-                    )}
+                    {(() => {
+                      const flag = record.htblFlag || computeHTBLFlag(record.htblElements);
+                      const count = record.htblYesCount !== undefined ? record.htblYesCount : getHTBLYesCount(record.htblElements);
+                      if (flag === 'Pipeline') {
+                        return (
+                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-100 text-rose-800 shrink-0 flex items-center gap-1 border border-rose-200">
+                            <AlertTriangle className="w-3 h-3 text-rose-600" />
+                            Pipeline ({count} Yes)
+                          </span>
+                        );
+                      }
+                      if (flag === 'Potential') {
+                        return (
+                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 shrink-0 flex items-center gap-1 border border-amber-200">
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            Potential ({count} Yes)
+                          </span>
+                        );
+                      }
+                      if (flag === 'Identification') {
+                        return (
+                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-800 shrink-0 flex items-center gap-1 border border-blue-200">
+                            <ShieldAlert className="w-3 h-3 text-blue-600" />
+                            Identification ({count} Yes)
+                          </span>
+                        );
+                      }
+                      return (
+                        <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-emerald-100 text-emerald-800 shrink-0 border border-emerald-200">
+                          Clean (0 Yes)
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl">
